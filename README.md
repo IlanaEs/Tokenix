@@ -163,12 +163,11 @@ All components are developed using Test-Driven Development (TDD), with tests wri
 
 ## Team Responsibilities
 
-* **Student A – Backend & DevOps**
-  Backend API, database integration, Docker/Docker Compose configuration, CI/CD, and repository structure.
+* **Student A — Backend · DB · Security · Tests**
+Responsible for the backend API, database design & integration, security controls (auth, encryption, logging), and unit/integration testing.
 
-* **Student B – Blockchain, Frontend & Integration**
-  Smart contracts, frontend application, wallet integration, and end-to-end connectivity.
-
+* **Student B — Blockchain · Wallet · Frontend · Integration**
+Responsible for the smart contracts, wallet/key management, frontend application, and end-to-end integration between frontend, backend, and blockchain.
 ---
 
 ## Work Plan / MVP
