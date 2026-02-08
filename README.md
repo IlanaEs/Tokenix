@@ -1,56 +1,117 @@
-# Tokenix
+# Tokenix – Secure Digital Wallet for Blockchain Tokens
 
-Tokenix is a minimalist fintech & cyber project skeleton built to support a backend API, a React frontend, and blockchain smart contracts.  This repository provides a clear separation of responsibilities between the different layers and includes Docker Compose configuration for local development.
+Tokenix is a FinTech & Cyber project that demonstrates the design and implementation of a secure digital wallet for creating, storing, and transferring blockchain tokens.
+The project is built as a full-stack system combining a backend API, a client-side web interface, and blockchain smart contracts, with a strong emphasis on security, clean architecture, and test-driven development.
+
+The system uses a single ERC-20 smart contract written in Solidity (OpenZeppelin) to mint and manage tokens. Users generate cryptographic key pairs locally, while the backend is responsible for authentication, transaction management, and interaction with the blockchain. All communication is secured using HTTPS/TLS, and sensitive data is encrypted at rest.
+
+---
+
+## Main Functional Requirements
+
+* Create a new user account and generate a cryptographic key pair for signing and encryption.
+* Display wallet token balances, including token identifiers.
+* Transfer tokens between users with clear transaction states (Pending, Confirmed, Failed).
+* Record all transactions in an auditable transaction log.
+* Provide users with access to their transaction history.
+
+---
+
+## Non-Functional Requirements
+
+* Enforce HTTPS/TLS for all communication.
+* Securely store passwords and sensitive data in a cloud database.
+* Use containerization (Docker) to ensure environment parity and portability.
+* Support horizontal scalability of services.
+* Apply Test-Driven Development (TDD) with unit and integration tests for all components.
+
+---
+
+## Technology Mapping
+
+| Layer          | Technologies                                                    |
+| -------------- | --------------------------------------------------------------- |
+| Frontend       | React (Vite), client-side key management                        |
+| Backend        | Node.js / Express (API, authentication, blockchain interaction) |
+| Smart Contract | Solidity (OpenZeppelin ERC-20)                                  |
+| Database       | PostgreSQL or MongoDB                                           |
+| DevOps         | Docker, Docker Compose, GitHub Actions (CI/CD)                  |
+
+---
+
+## Security and Threat Modeling
+
+The project includes a STRIDE threat analysis covering:
+
+* Spoofing
+* Tampering
+* Repudiation
+* Information Disclosure
+* Denial of Service
+* Elevation of Privilege
+
+Mitigations include strong authentication, digital signatures, encrypted communication, encrypted storage, audit logging, and traffic monitoring.
+
+---
 
 ## Repository Structure
 
 ```
-├── backend         # Node.js/Express API server
-│   ├── Dockerfile  # Container definition for the backend
-│   ├── package.json
-│   └── src
-│       └── index.js
-├── frontend        # React application
-│   ├── Dockerfile  # Container definition for the frontend
-│   ├── index.html
-│   ├── package.json
-│   ├── vite.config.js
-│   └── src
-│       ├── App.jsx
-│       └── main.jsx
+├── backend         # Node.js / Express API server
+│   ├── Dockerfile
+│   ├── package.json
+│   └── src
+│       └── index.js
+├── frontend        # React application (Vite)
+│   ├── Dockerfile
+│   ├── index.html
+│   ├── package.json
+│   ├── vite.config.js
+│   └── src
+│       ├── App.jsx
+│       └── main.jsx
 ├── contracts       # Hardhat project for smart contracts
-│   ├── contracts
-│   │   └── MyToken.sol
-│   ├── scripts
-│   │   └── deploy.js
-│   ├── hardhat.config.js
-│   └── package.json
-├── docker-compose.yml  # Compose file to orchestrate services
-└── README.md           # Project overview and instructions (this file)
+│   ├── contracts
+│   │   └── MyToken.sol
+│   ├── scripts
+│   │   └── deploy.js
+│   ├── hardhat.config.js
+│   └── package.json
+├── docker-compose.yml  # Service orchestration
+└── README.md
 ```
+
+---
 
 ## Getting Started
 
-The project uses Docker Compose to run all services together. Make sure you have Docker and Docker Compose installed.
+### Prerequisites
 
-### Running the full stack
+* Docker and Docker Compose installed
+* Node.js (for running services without Docker)
 
-From the repository root run:
+---
+
+## Running the Full Stack (Recommended)
+
+From the repository root:
 
 ```bash
 docker compose up --build
 ```
 
-This command will build the backend and frontend images and start the services along with a PostgreSQL database. Once running:
+Once running:
 
-- The backend API will be available at `http://localhost:3000`. Check `http://localhost:3000/health` for a health status response.
-- The frontend React app will be served at `http://localhost:5173` and will display a message confirming it is running.
+* Backend API: [http://localhost:3000](http://localhost:3000)
+
+  * Health check: [http://localhost:3000/health](http://localhost:3000/health)
+* Frontend: [http://localhost:5173](http://localhost:5173)
+
+---
+
+## Running Services Locally (Without Docker)
 
 ### Backend
-
-The backend, located in `/backend`, is a simple Express server that connects to a PostgreSQL database. It exposes a single `GET /health` endpoint that verifies the database connection and returns a JSON status.
-
-To run it locally without Docker:
 
 ```bash
 cd backend
@@ -58,13 +119,9 @@ npm install
 npm start
 ```
 
-The server will listen on port `3000` and expects a `DATABASE_URL` environment variable for connecting to the database. When running via Docker Compose this environment variable is automatically set.
+The backend listens on port 3000 and expects a `DATABASE_URL` environment variable. When using Docker Compose, this is set automatically.
 
 ### Frontend
-
-The frontend, located in `/frontend`, is a minimal React application powered by Vite. It simply renders a “Tokenix running” message on the page.
-
-To run it locally without Docker:
 
 ```bash
 cd frontend
@@ -72,36 +129,55 @@ npm install
 npm run dev
 ```
 
-The development server will start on `http://localhost:5173`.
+The frontend development server runs on [http://localhost:5173](http://localhost:5173).
 
-### Contracts
-
-The `/contracts` directory contains a Hardhat project with a placeholder ERC‑20 token contract (`MyToken.sol`) and a basic deploy script.
-
-To compile and deploy the contract locally:
+### Smart Contracts
 
 ```bash
 cd contracts
 npm install
 npx hardhat compile
-# Start a local blockchain (e.g. via `npx hardhat node` in another terminal) and then:
+```
+
+To deploy locally:
+
+```bash
+npx hardhat node
 npx hardhat run scripts/deploy.js --network localhost
 ```
 
-### Team Responsibilities
+---
 
-This project distinguishes between two primary roles to help with collaboration:
+## Design and Testing
 
-- **Student A – Backend & DevOps**: Responsible for the Node.js backend, database integration, Docker/Docker Compose configuration, and overall repository structure.
-- **Student B – Blockchain, Frontend & Integration**: Responsible for the React frontend, Hardhat contracts, and wiring up integration points between the frontend and backend.
+The system design follows UML principles, including:
 
-### Minimum Viable Product (MVP)
+* Use Case Diagrams
+* Sequence Diagrams
+* Class Diagrams
+* ERD (Entity-Relationship Diagrams)
 
-The MVP for this project includes:
+All components are developed using Test-Driven Development (TDD), with tests written before implementation using appropriate frameworks (e.g., Jest).
 
-- A backend API server with a health-check endpoint and database connectivity.
-- A React frontend that can be served and displays confirmation that it is running.
-- A Hardhat project with a simple ERC‑20 token contract and deploy script.
-- A Docker Compose setup for running all components together with a PostgreSQL database.
+---
 
-By following this structure you will have a clear foundation to build upon as you expand the features of Tokenix.
+## Team Responsibilities
+
+* **Student A – Backend & DevOps**
+  Backend API, database integration, Docker/Docker Compose configuration, CI/CD, and repository structure.
+
+* **Student B – Blockchain, Frontend & Integration**
+  Smart contracts, frontend application, wallet integration, and end-to-end connectivity.
+
+---
+
+## Work Plan / MVP
+
+The Minimum Viable Product includes:
+
+* A backend API with health-check and database connectivity.
+* A React frontend confirming successful operation.
+* A Solidity ERC-20 smart contract with deployment scripts.
+* A Docker Compose setup for running all components together.
+
+This foundation provides a secure and extensible base for future feature expansion.
