@@ -15,3 +15,5 @@ npm-debug.log*
 
 # Environment variables
 .env
+contracts/artifacts/
+contracts/cache/
