@@ -6,8 +6,9 @@ async function main() {
 
   const Token = await hre.ethers.getContractFactory("MyToken");
   const token = await Token.deploy(initialSupply);
-  await token.deployed();
-  console.log("MyToken deployed to:", token.target || token.address);
+  await token.waitForDeployment();
+  const address = await token.getAddress();
+  console.log("MyToken deployed to:", address);
 }
 
 main().catch((error) => {
