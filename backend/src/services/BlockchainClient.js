@@ -1,66 +1,59 @@
-const { ethers } = require('ethers');
+import { ethers } from 'ethers';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
 const tokenArtifact = require('../abi/TokenixAsset.json');
 
-// Default to the address we deployed to earlier
-const DEFAULT_CONTRACT_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
-const DEFAULT_RPC_URL = "http://localhost:8545";
+const DEFAULT_CONTRACT_ADDRESS = '0x5FbDB2315678afecb367f032d93F642f64180aa3';
+const DEFAULT_RPC_URL = 'http://localhost:8545';
 
 class BlockchainClient {
-    constructor() {
-        this.provider = new ethers.JsonRpcProvider(process.env.RPC_URL || DEFAULT_RPC_URL);
-        this.contractAddress = process.env.CONTRACT_ADDRESS || DEFAULT_CONTRACT_ADDRESS;
-        
-        // Initialize contract instance (readonly by default)
-        this.contract = new ethers.Contract(
-            this.contractAddress,
-            tokenArtifact.abi,
-            this.provider
-        );
-        
-        console.log(`BlockchainClient initialized for contract: ${this.contractAddress}`);
-    }
+  constructor() {
+    this.provider = new ethers.JsonRpcProvider(process.env.RPC_URL || DEFAULT_RPC_URL);
+    this.contractAddress = process.env.CONTRACT_ADDRESS || DEFAULT_CONTRACT_ADDRESS;
 
-    /**
-     * Get the token balance for a given address
-     * @param {string} address - The wallet address to check
-     * @returns {Promise<string>} - The balance structured as a string (human readable)
-     */
-    async getBalance(address) {
-        try {
-            if (!ethers.isAddress(address)) {
-                throw new Error("Invalid address format");
-            }
+    this.contract = new ethers.Contract(
+      this.contractAddress,
+      tokenArtifact.abi,
+      this.provider
+    );
 
-            const balanceRaw = await this.contract.balanceOf(address);
-            // Assuming 18 decimals, formatting to human readable string
-            return ethers.formatUnits(balanceRaw, 18);
-        } catch (error) {
-            console.error(`Error getting balance for ${address}:`, error.message);
-            throw error;
-        }
-    }
+    console.log(`BlockchainClient initialized for contract: ${this.contractAddress}`);
+  }
 
-    /**
-     * Get basic token details
-     */
-    async getTokenDetails() {
-        try {
-            const [name, symbol, supply] = await Promise.all([
-                this.contract.name(),
-                this.contract.symbol(),
-                this.contract.totalSupply()
-            ]);
-            
-            return {
-                name,
-                symbol,
-                totalSupply: ethers.formatUnits(supply, 18)
-            };
-        } catch (error) {
-            console.error("Error fetching token details:", error);
-            throw error;
-        }
+  async getBalance(address) {
+    try {
+      if (!ethers.isAddress(address)) {
+        throw new Error('Invalid address format');
+      }
+
+      const balanceRaw = await this.contract.balanceOf(address);
+      return ethers.formatUnits(balanceRaw, 18);
+    } catch (error) {
+      console.error(`Error getting balance for ${address}:`, error.message);
+      throw error;
     }
+  }
+
+  async getTokenDetails() {
+    try {
+      const [name, symbol, supply] = await Promise.all([
+        this.contract.name(),
+        this.contract.symbol(),
+        this.contract.totalSupply(),
+      ]);
+
+      return {
+        name,
+        symbol,
+        totalSupply: ethers.formatUnits(supply, 18),
+      };
+    } catch (error) {
+      console.error('Error fetching token details:', error);
+      throw error;
+    }
+  }
 }
 
-module.exports = new BlockchainClient();
+const blockchainClient = new BlockchainClient();
+export default blockchainClient;

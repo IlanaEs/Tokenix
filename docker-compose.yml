@@ -2,20 +2,22 @@ version: "3.8"
 
 services:
   db:
-    image: postgres:15
+    image: postgres:16
+    container_name: tokenix-db
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: tokenixdb
+      POSTGRES_DB: tokenix
     ports:
       - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - tokenix_pgdata:/var/lib/postgresql/data
 
   backend:
     build: ./backend
     environment:
-      DATABASE_URL: postgres://postgres:postgres@db:5432/tokenixdb
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/tokenix
+      JWT_SECRET: super_secret_change_me
       PORT: 3000
     ports:
       - "3000:3000"
@@ -30,4 +32,4 @@ services:
       - backend
 
 volumes:
-  pgdata:
+  tokenix_pgdata:
