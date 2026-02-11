@@ -1,5 +1,6 @@
 const express = require('express');
 const { Pool } = require('pg');
+const blockchainClient = require('./services/BlockchainClient');
 
 const app = express();
 
@@ -14,11 +15,23 @@ const pool = new Pool({ connectionString: databaseUrl });
 app.get('/health', async (req, res) => {
   try {
     await pool.query('SELECT 1');
-    res.status(200).json({ status: 'ok' });
+    const tokenInfo = await blockchainClient.getTokenDetails();
+    res.status(200).json({ status: 'ok', db: 'connected', token: tokenInfo });
   } catch (err) {
     console.error(err);
     res.status(500).json({ status: 'error', message: err.message });
   }
+});
+
+app.get('/balance/:walletAddress', async (req, res) => {
+    try {
+        const { walletAddress } = req.params;
+        const balance = await blockchainClient.getBalance(walletAddress);
+        // Responding with agreed "sacred" variable names
+        res.json({ walletAddress, balance });
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
 });
 
 app.listen(port, () => {

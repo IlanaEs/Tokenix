@@ -33,7 +33,7 @@ The system uses a single ERC-20 smart contract written in Solidity (OpenZeppelin
 | -------------- | --------------------------------------------------------------- |
 | Frontend       | React (Vite), client-side key management                        |
 | Backend        | Node.js / Express (API, authentication, blockchain interaction) |
-| Smart Contract | Solidity (OpenZeppelin ERC-20)                                  |
+| Smart Contract | Solidity (OpenZeppelin ERC-20), Hardhat, Ignition               |
 | Database       | PostgreSQL or MongoDB                                           |
 | DevOps         | Docker, Docker Compose, GitHub Actions (CI/CD)                  |
 
@@ -70,15 +70,18 @@ Mitigations include strong authentication, digital signatures, encrypted communi
 │   └── src
 │       ├── App.jsx
 │       └── main.jsx
-├── contracts       # Hardhat project for smart contracts
+├── blockchain        # Hardhat project for smart contracts
 │   ├── contracts
-│   │   └── MyToken.sol
-│   ├── scripts
-│   │   └── deploy.js
+│   │   └── Token.sol
+│   ├── ignition
+│   │   └── modules
+│   │       └── Token.js
+│   ├── test
+│   │   └── Token.js
 │   ├── hardhat.config.js
 │   └── package.json
 ├── docker-compose.yml  # Service orchestration
-└── README.md
+└── NOT-README.md
 ```
 
 ---
@@ -134,17 +137,13 @@ The frontend development server runs on [http://localhost:5173](http://localhost
 ### Smart Contracts
 
 ```bash
-cd contracts
+cd blockchain
 npm install
-npx hardhat compile
+npm run full-deploy
 ```
 
-To deploy locally:
-
-```bash
-npx hardhat node
-npx hardhat run scripts/deploy.js --network localhost
-```
+This will compile contracts, deploy them to the local Hardhat network, and sync ABIs to backend/frontend.
+Note: Ensure `npx hardhat node` is running in a separate terminal.
 
 ---
 
