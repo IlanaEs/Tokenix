@@ -168,19 +168,16 @@ All components are developed using Test-Driven Development (TDD), with tests wri
 Leads backend architecture and core system design.  
 Responsible for authentication and authorization (JWT, RBAC), database schema and data integrity, API contract governance, transaction lifecycle orchestration, and system-wide security enforcement.
 
----
-
 ### Shely Zino — Frontend · Client Layer · Wallet Experience
 
 Leads the client application architecture and user interaction layer.  
 Responsible for the React frontend, wallet experience design, client-side key management and digital signature flows, and full API integration including payload structure, status handling, and error management.
 
----
-
 ### Lior Zvieli — Blockchain · Smart Contract · On-Chain Integration
 
 Leads the blockchain and smart contract domain.  
 Responsible for the ERC-20 smart contract design and deployment, on-chain logic (minting, transfers, validation), Ethers.js integration layer, and blockchain-level testing and reliability.
+
 ---
 
 ## Work Plan / MVP
