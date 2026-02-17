@@ -19,7 +19,7 @@ export const register = async ({ email, password }) => {
     throw error;
   }
 
-  const existingUser = await pool.query('SELECT id FROM users WHERE email = $1 LIMIT 1', [email]);
+  const existingUser = await pool.query('SELECT user_id FROM users WHERE email = $1 LIMIT 1', [email]);
   if (existingUser.rowCount > 0) {
     const error = new Error('user already exists');
     error.status = 409;
@@ -28,12 +28,12 @@ export const register = async ({ email, password }) => {
 
   const passwordHash = await bcrypt.hash(password, saltRounds);
   const createdUser = await pool.query(
-    'INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id, email',
+    'INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING user_id AS "userId", email',
     [email, passwordHash]
   );
 
   const user = createdUser.rows[0];
-  const token = createToken({ sub: user.id, email: user.email });
+  const token = createToken({ sub: user.userId, email: user.email });
   return { user, token };
 };
 
@@ -45,7 +45,7 @@ export const login = async ({ email, password }) => {
   }
 
   const userResult = await pool.query(
-    'SELECT id, email, password_hash FROM users WHERE email = $1 LIMIT 1',
+    'SELECT user_id AS "userId", email, password_hash FROM users WHERE email = $1 LIMIT 1',
     [email]
   );
 
@@ -64,6 +64,6 @@ export const login = async ({ email, password }) => {
     throw error;
   }
 
-  const token = createToken({ sub: user.id, email: user.email });
-  return { user: { id: user.id, email: user.email }, token };
+  const token = createToken({ sub: user.userId, email: user.email });
+  return { user: { userId: user.userId, email: user.email }, token };
 };

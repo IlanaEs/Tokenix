@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 // נתיבי מקור (יחסיים לתיקיית blockchain)
-const ABI_SOURCE = './artifacts/contracts/Token.sol/TokenixAsset.json';
+const ABI_SOURCE = './artifacts/contracts/Token.sol/MyToken.json';
 const ADDRESS_SOURCE = './ignition/deployments/chain-31337/deployed_addresses.json';
 
 // נתיבי יעד
@@ -18,7 +18,7 @@ function sync() {
     
     // 2. קריאת הכתובת העדכנית מ-Ignition
     const addresses = JSON.parse(fs.readFileSync(ADDRESS_SOURCE, 'utf8'));
-    const contractAddress = addresses["TokenModule#TokenixAsset"];
+    const contractAddress = addresses["TokenModule#MyToken"];
 
     const output = {
       address: contractAddress,
@@ -31,7 +31,7 @@ function sync() {
         fs.mkdirSync(targetDir, { recursive: true });
       }
       fs.writeFileSync(
-        path.join(targetDir, 'TokenixAsset.json'),
+        path.join(targetDir, 'MyToken.json'),
         JSON.stringify(output, null, 2)
       );
     });

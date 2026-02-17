@@ -1,0 +1,24 @@
+{
+  "name": "blockchain",
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+  "compile": "npx hardhat compile",
+  "deploy:local": "npx hardhat ignition deploy ./ignition/modules/Token.js --network localhost",
+  "sync": "node scripts/sync-abi.js",
+  "full-deploy": "npm run compile && npm run deploy:local && npm run sync",
+  "test": "npx hardhat test --network localhost"
+
+},
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^6.1.0",
+    "hardhat": "^2.28.5"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.4.0"
+  }
+}

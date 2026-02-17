@@ -1,11 +1,12 @@
 import express from 'express';
 import { authRoutes } from './routes/authRoutes.js';
 import { walletRoutes } from './routes/walletRoutes.js';
-import blockchainClient from './services/BlockchainClient.js';
+import BlockchainClient from './services/BlockchainClient.js';
 import { pool } from './db.js';
 
 const app = express();
 app.use(express.json());
+const blockchainClient = new BlockchainClient();
 
 const port = process.env.PORT || 3000;
 
@@ -20,13 +21,13 @@ app.get('/health', async (req, res) => {
   }
 });
 
-app.get('/balance/:walletAddress', async (req, res) => {
+app.get('/balance/:walletAddress', async (req, res, next) => {
   try {
     const { walletAddress } = req.params;
     const balance = await blockchainClient.getBalance(walletAddress);
-    res.json({ walletAddress, balance });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
+    return res.json({ walletAddress, balance });
+  } catch (e) {
+    next(e);
   }
 });
 
