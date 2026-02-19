@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { ethers } from "ethers";
-import MyTokenAbi from "./abi/MyToken.json";
+
+const ABI = [];
 
 const RPC_URL = "http://127.0.0.1:8545";
 const CONTRACT_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
@@ -32,7 +33,7 @@ export default function TokenDemo() {
 
   const provider = useMemo(() => new ethers.JsonRpcProvider(RPC_URL), []);
   const contract = useMemo(() => {
-    return new ethers.Contract(CONTRACT_ADDRESS, MyTokenAbi.abi, provider);
+    return new ethers.Contract(CONTRACT_ADDRESS, ABI, provider);
   }, [provider]);
 
   async function loadMyAddressAndBalance() {

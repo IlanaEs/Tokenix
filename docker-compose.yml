@@ -17,6 +17,7 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/tokenix
       RPC_URL: http://hardhat:8545
+      CONTRACT_ADDRESS: 0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512
       JWT_SECRET: super_secret_change_me
       PORT: 3000
     ports:
