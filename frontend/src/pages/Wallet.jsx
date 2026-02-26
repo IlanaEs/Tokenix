@@ -23,7 +23,7 @@ async function fetchBalance() {
   return apiFetch("/wallet/balance");
 }
 
-export default function Wallet({ onLogout }) {
+export default function Wallet({ onLogout, onShowSendTokens, onShowHistory }) {
   const [walletAddress, setWalletAddress] = useState("");
   const [balance, setBalance] = useState("");
   const [loading, setLoading] = useState(true);
@@ -118,15 +118,25 @@ export default function Wallet({ onLogout }) {
         </>
       )}
 
-      <button
-        onClick={() => {
-          clearToken();
-          onLogout?.();
-        }}
-        style={{ marginTop: 20 }}
-      >
-        Logout
-      </button>
+      <div style={{ marginTop: 20, display: "flex", gap: 10 }}>
+        <button type="button" onClick={onShowHistory}>
+          History
+        </button>
+
+        <button type="button" onClick={onShowSendTokens}>
+          Send Tokens
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            clearToken();
+            onLogout?.();
+          }}
+        >
+          Logout
+        </button>
+      </div>
     </div>
   );
 }

@@ -1,6 +1,16 @@
 import { getToken } from "./token";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
+const ENABLE_TRANSACTIONS_API = false;
+// flip to true once backend /transactions is ready
+
+export type Transaction = {
+  amount: number;
+  to: string;
+  status: "PENDING" | "CONFIRMED" | "FAILED";
+  createdAt: string;
+  txHash?: string;
+};
 
 export async function apiFetch<T>(
   path: string,
@@ -33,4 +43,27 @@ export async function apiFetch<T>(
   }
 
   return rawBody as T;
+}
+
+export async function transferTokens(
+  to: string,
+  amount: number
+): Promise<{ txHash?: string }> {
+  void to;
+  void amount;
+  throw new Error("Not implemented yet");
+}
+
+export async function fetchTransactions(): Promise<Transaction[]> {
+  if (!ENABLE_TRANSACTIONS_API) {
+    throw new Error("Not implemented yet");
+  }
+
+  const response = await fetch(`${BASE_URL}/transactions`);
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch transactions");
+  }
+
+  return (await response.json()) as Transaction[];
 }

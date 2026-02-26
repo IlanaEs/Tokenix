@@ -3,6 +3,8 @@ import { getToken } from "./lib/token";
 import Register from "./pages/Register.jsx";
 import Login from "./pages/Login.jsx";
 import Wallet from "./pages/Wallet.jsx";
+import SendTokens from "./pages/SendTokens.jsx";
+import TransactionHistory from "./pages/TransactionHistory.jsx";
 
 export default function App() {
   const [mode, setMode] = useState(() => (getToken() ? "wallet" : "login"));
@@ -11,13 +13,21 @@ export default function App() {
     <div style={{ maxWidth: 520, margin: "0 auto" }}>
       {mode === "wallet" ? (
         getToken() ? (
-          <Wallet onLogout={() => setMode("login")} />
+          <Wallet
+            onLogout={() => setMode("login")}
+            onShowSendTokens={() => setMode("sendTokens")}
+            onShowHistory={() => setMode("history")}
+          />
         ) : (
           <Login
             onSuccess={() => setMode("wallet")}
             onShowRegister={() => setMode("register")}
           />
         )
+      ) : mode === "history" ? (
+        <TransactionHistory onBack={() => setMode("wallet")} />
+      ) : mode === "sendTokens" ? (
+        <SendTokens onBack={() => setMode("wallet")} />
       ) : mode === "register" ? (
         <Register
           onSuccess={() => setMode("wallet")}
