@@ -33,10 +33,24 @@ export async function getWalletByUserId(userId) {
   return rows[0] || null;
 }
 
+export async function getUserWalletAddress(userId) {
+  const wallet = await getWalletByUserId(userId);
+  if (!wallet?.walletAddress) {
+    const error = new Error("Wallet not found");
+    error.status = 404;
+    throw error;
+  }
+  return wallet.walletAddress;
+}
+
 export async function getBalance(userId) {
   const wallet = await getWalletByUserId(userId);
   if (!wallet) return null;
 
   // placeholder until BlockchainClient is wired
-  return { walletAddress: wallet.walletAddress, balance: "0" };
+  return {
+    walletAddress: wallet.walletAddress,
+    balance: "0",
+    source: "db-placeholder",
+  };
 }

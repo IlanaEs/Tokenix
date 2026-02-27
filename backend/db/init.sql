@@ -18,10 +18,11 @@ CREATE TABLE IF NOT EXISTS wallets (
 
 CREATE TABLE IF NOT EXISTS transactions (
   tx_id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(user_id),
   from_address TEXT,
   to_address TEXT,
   amount NUMERIC,
   tx_hash TEXT,
   status TEXT,
-  timestamp TIMESTAMP DEFAULT NOW()
+  created_at TIMESTAMP DEFAULT NOW()
 );
