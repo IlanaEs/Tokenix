@@ -34,7 +34,7 @@ The system uses a single ERC-20 smart contract written in Solidity (OpenZeppelin
 | Frontend       | React (Vite), client-side key management                        |
 | Backend        | Node.js / Express (API, authentication, blockchain interaction) |
 | Smart Contract | Solidity (OpenZeppelin ERC-20), Hardhat, Ignition               |
-| Database       | PostgreSQL or MongoDB                                           |
+| Database       | PostgreSQL                                                      |
 | DevOps         | Docker, Docker Compose, GitHub Actions (CI/CD)                  |
 
 ---
@@ -75,13 +75,12 @@ Mitigations include strong authentication, digital signatures, encrypted communi
 │   │   └── Token.sol
 │   ├── ignition
 │   │   └── modules
-│   │       └── Token.js
+│   │       └── Token.cjs
 │   ├── test
 │   │   └── Token.js
-│   ├── hardhat.config.js
+│   ├── hardhat.config.cjs
 │   └── package.json
 ├── docker-compose.yml  # Service orchestration
-└── NOT-README.md
 ```
 
 ---
@@ -101,6 +100,8 @@ From the repository root:
 
 ```bash
 docker compose up --build
+docker compose exec hardhat npx hardhat ignition deploy /app/ignition/modules/Token.cjs --network localhost
+docker compose restart backend
 ```
 
 Once running:
@@ -109,6 +110,8 @@ Once running:
 
   * Health check: [http://localhost:3000/health](http://localhost:3000/health)
 * Frontend: [http://localhost:5173](http://localhost:5173)
+
+Note: the contract deployment step is required after the local Hardhat node starts so the backend can connect to a fresh contract address.
 
 ---
 
@@ -139,11 +142,17 @@ The frontend development server runs on [http://localhost:5173](http://localhost
 ```bash
 cd blockchain
 npm install
+npx hardhat node
+```
+
+In a separate terminal:
+
+```bash
+cd blockchain
 npm run full-deploy
 ```
 
 This will compile contracts, deploy them to the local Hardhat network, and sync ABIs to backend/frontend.
-Note: Ensure `npx hardhat node` is running in a separate terminal.
 
 ---
 
@@ -184,8 +193,10 @@ Responsible for the ERC-20 smart contract design and deployment, on-chain logic 
 The Minimum Viable Product includes:
 
 * A backend API with health-check and database connectivity.
-* A React frontend confirming successful operation.
+* A React frontend with authentication and wallet balance display.
 * A Solidity ERC-20 smart contract with deployment scripts.
 * A Docker Compose setup for running all components together.
 
 This foundation provides a secure and extensible base for future feature expansion.
+
+Current status note: the backend already exposes wallet balance, transfer, and transaction history endpoints. The frontend currently covers authentication, wallet creation, and wallet balance display.
