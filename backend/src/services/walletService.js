@@ -1,4 +1,7 @@
 import { pool } from "../db.js";
+import BlockchainClient from "./BlockchainClient.js";
+
+const blockchainClient = new BlockchainClient();
 
 export async function createWallet({ userId, walletAddress, publicKey }) {
   const q = `
@@ -15,7 +18,10 @@ export async function createWallet({ userId, walletAddress, publicKey }) {
     return rows[0];
   } catch (e) {
     if (e.code === "23505") {
-      return null; // already has wallet or address already taken
+      const error = new Error("Wallet already exists");
+      error.status = 409;
+      error.statusCode = 409;
+      throw error;
     }
     throw e;
   }
@@ -45,12 +51,28 @@ export async function getUserWalletAddress(userId) {
 
 export async function getBalance(userId) {
   const wallet = await getWalletByUserId(userId);
-  if (!wallet) return null;
+  if (!wallet) {
+    const error = new Error("Wallet not found");
+    error.status = 404;
+    error.statusCode = 404;
+    throw error;
+  }
 
-  // placeholder until BlockchainClient is wired
-  return {
-    walletAddress: wallet.walletAddress,
-    balance: "0",
-    source: "db-placeholder",
-  };
+  try {
+    const balance = await blockchainClient.getBalance(wallet.walletAddress);
+
+    return {
+      walletAddress: wallet.walletAddress,
+      balance,
+      source: "blockchain",
+    };
+  } catch (error) {
+    console.error(`walletService.getBalance failed for ${wallet.walletAddress}:`, error);
+
+    const normalizedError = new Error("Blockchain service unavailable");
+    normalizedError.status = 502;
+    normalizedError.statusCode = 502;
+    normalizedError.cause = error;
+    throw normalizedError;
+  }
 }

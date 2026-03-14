@@ -30,7 +30,7 @@ export default class BlockchainClient {
     this.setupEventListeners();
   }
 
-  async setupEventListeners() {
+  setupEventListeners() {
     if (this.isListening || !this.contract) return;
 
     try {
@@ -39,14 +39,10 @@ export default class BlockchainClient {
       this.contract.on("Transfer", async (from, to, value, eventPayload) => {
         try {
           const txHash = eventPayload?.log?.transactionHash || eventPayload?.transactionHash;
-          
-          if (txHash) {
-            console.log(`🔔 Transfer Confirmed: ${txHash}`);
-            await pool.query(
-              "UPDATE transactions SET status = 'CONFIRMED', confirmed_at = NOW() WHERE tx_hash = $1 AND status = 'PENDING'",
-              [txHash]
-            );
-          }
+
+          if (!txHash) return;
+
+          console.log(`🔔 Transfer observed: ${txHash}`);
         } catch (err) {
           console.error("Error processing Transfer event:", err);
         }
@@ -145,14 +141,31 @@ export default class BlockchainClient {
 
       console.log(`Initiating transfer: ${amount} tokens to ${toAddress}`);
       const txResponse = await contractWithSigner.transfer(toAddress, value);
-      
-      // Wait for confirmation
-      await txResponse.wait(1);
-      
+
       return txResponse.hash;
     } catch (error) {
       console.error("Blockchain Transfer Error:", error);
       throw new Error(`Transfer failed: ${error.message}`);
+    }
+  }
+
+  async waitForTransaction(txHash) {
+    this.ensureConfigured();
+
+    try {
+      const receipt = await this.provider.waitForTransaction(txHash);
+
+      if (!receipt) {
+        const error = new Error(`Transaction receipt not found for ${txHash}`);
+        error.status = 502;
+        error.statusCode = 502;
+        throw error;
+      }
+
+      return receipt;
+    } catch (error) {
+      console.error(`Error waiting for transaction ${txHash}:`, error);
+      throw error;
     }
   }
 }

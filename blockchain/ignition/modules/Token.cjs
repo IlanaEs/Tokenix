@@ -1,8 +1,8 @@
-import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
+const { buildModule } = require("@nomicfoundation/hardhat-ignition/modules");
 
 const DEFAULT_MAX_SUPPLY = 1_000_000n * 10n ** 18n;
 
-export default buildModule("TokenModule", (m) => {
+module.exports = buildModule("TokenModule", (m) => {
   const name = m.getParameter("name", "Tokenix");
   const symbol = m.getParameter("symbol", "TNX");
   const initialOwner = m.getAccount(0);

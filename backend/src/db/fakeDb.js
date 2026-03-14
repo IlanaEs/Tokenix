@@ -24,7 +24,7 @@ export const saveWallet = (wallet) => {
   return wallet;
 };
 
-export const findWalletByUserId = (userId) =>
+export const getWalletByUserId = (userId) =>
   db.wallets.find(w => w.userId === userId);
 
 export const saveTransaction = (tx) => {

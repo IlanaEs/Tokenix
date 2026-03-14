@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS transactions (
   to_address TEXT,
   amount NUMERIC,
   tx_hash TEXT,
-  status TEXT,
-  created_at TIMESTAMP DEFAULT NOW()
+  status TEXT CHECK (status IN ('PENDING', 'CONFIRMED', 'FAILED')),
+  created_at TIMESTAMP DEFAULT NOW(),
+  confirmed_at TIMESTAMP NULL
 );

@@ -15,5 +15,6 @@ npm-debug.log*
 
 # Environment variables
 .env
+reset-local-chain.sh
 contracts/artifacts/
 contracts/cache/

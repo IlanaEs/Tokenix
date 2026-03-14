@@ -17,13 +17,14 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/tokenix
       RPC_URL: http://hardhat:8545
-      CONTRACT_ADDRESS: 0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512
+      CONTRACT_ADDRESS: 0x5FbDB2315678afecb367f032d93F642f64180aa3
       JWT_SECRET: super_secret_change_me
       PORT: 3000
     ports:
       - "3000:3000"
     depends_on:
       - db
+      - hardhat
 
   frontend:
     build: ./frontend
@@ -34,7 +35,7 @@ services:
 
   hardhat:
     build:
-      context: ./contracts
+      context: ./blockchain
     container_name: tokenix-hardhat
     command: npx hardhat node
     ports:
