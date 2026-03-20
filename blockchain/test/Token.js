@@ -70,8 +70,8 @@ describe("MyToken", function () {
         
         // Try to mint 1 more wei
         await expect(
-            token.mint(owner.address, 1n)
-        ).to.be.revertedWith("Tokenix: Exceeds max supply");
+          token.mint(owner.address, 1n)
+        ).to.be.revertedWith("ERC20: Exceeds max supply");
     });
   });
 });

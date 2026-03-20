@@ -75,7 +75,7 @@ Mitigations include strong authentication, digital signatures, encrypted communi
 │   │   └── Token.sol
 │   ├── ignition
 │   │   └── modules
-│   │       └── Token.cjs
+│   │       └── Token.js
 │   ├── test
 │   │   └── Token.js
 │   ├── hardhat.config.cjs
@@ -100,7 +100,7 @@ From the repository root:
 
 ```bash
 docker compose up --build
-docker compose exec hardhat npx hardhat ignition deploy /app/ignition/modules/Token.cjs --network localhost
+docker compose exec hardhat npx hardhat ignition deploy /app/ignition/modules/Token.js --network localhost
 docker compose restart backend
 ```
 

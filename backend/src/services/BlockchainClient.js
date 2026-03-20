@@ -1,57 +1,59 @@
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { ethers } from 'ethers';
-import { createRequire } from 'module';
-import { pool } from '../db.js';
 
-const require = createRequire(import.meta.url);
-const tokenArtifact = require('../abi/MyToken.json');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-const DEFAULT_RPC_URL = 'http://hardhat:8545';
-const BLOCKCHAIN_CONFIG_ERROR = 'Blockchain client is not configured: set a valid CONTRACT_ADDRESS';
+const ABI_PATH = path.join(__dirname, '../abi/MyToken.json');
+const DEFAULT_RPC_URL = process.env.RPC_URL || 'http://hardhat:8545';
+const BLOCKCHAIN_CONFIG_ERROR = 'Blockchain client is not configured: missing ABI/Contract Address';
 
 export default class BlockchainClient {
   constructor() {
-    this.provider = new ethers.JsonRpcProvider(process.env.RPC_URL || DEFAULT_RPC_URL);
-    this.contractAddress = process.env.CONTRACT_ADDRESS;
+    this.provider = new ethers.JsonRpcProvider(DEFAULT_RPC_URL);
     this.contract = null;
+    this.contractAddress = null;
+    this.isListening = false;
 
-    if (!this.contractAddress) {
-      console.warn('BlockchainClient disabled: missing CONTRACT_ADDRESS');
-      return;
+    this._initialize();
+  }
+
+  _initialize() {
+    try {
+      if (!fs.existsSync(ABI_PATH)) {
+        console.warn('⚠️ BlockchainClient: ABI file not found at', ABI_PATH);
+        return;
+      }
+
+      const tokenJson = JSON.parse(fs.readFileSync(ABI_PATH, 'utf8'));
+      const abi = tokenJson.abi;
+      this.contractAddress = tokenJson.address || process.env.CONTRACT_ADDRESS;
+
+      if (!this.contractAddress || !abi) {
+        console.warn('⚠️ BlockchainClient: Missing address or ABI in JSON');
+        return;
+      }
+
+      this.contract = new ethers.Contract(this.contractAddress, abi, this.provider);
+      console.log(`✅ BlockchainClient connected to: ${this.contractAddress}`);
+      
+      this.setupEventListeners();
+    } catch (err) {
+      console.error('❌ Failed to initialize BlockchainClient:', err.message);
     }
-
-    if (!ethers.isAddress(this.contractAddress)) {
-      console.warn(`BlockchainClient disabled: invalid CONTRACT_ADDRESS (${this.contractAddress})`);
-      return;
-    }
-
-    this.contract = new ethers.Contract(this.contractAddress, tokenArtifact.abi, this.provider);
-
-    console.log(`BlockchainClient initialized for contract: ${this.contractAddress}`);
-    this.setupEventListeners();
   }
 
   setupEventListeners() {
     if (this.isListening || !this.contract) return;
 
-    try {
-      console.log("🎧 Starting Event Listeners for Transfer events...");
-      
-      this.contract.on("Transfer", async (from, to, value, eventPayload) => {
-        try {
-          const txHash = eventPayload?.log?.transactionHash || eventPayload?.transactionHash;
-
-          if (!txHash) return;
-
-          console.log(`🔔 Transfer observed: ${txHash}`);
-        } catch (err) {
-          console.error("Error processing Transfer event:", err);
-        }
-      });
-
-      this.isListening = true;
-    } catch (error) {
-      console.error("Failed to setup event listeners:", error);
-    }
+    console.log('📡 Starting Event Listeners for Transfer events...');
+    this.contract.on('Transfer', (from, to, value, event) => {
+      const txHash = event?.log?.transactionHash || event?.transactionHash;
+      console.log(`⛓️ New Transfer on-chain: ${txHash} (${ethers.formatUnits(value, 18)} tokens)`);
+    });
+    this.isListening = true;
   }
 
   isConfigured() {
@@ -59,112 +61,108 @@ export default class BlockchainClient {
   }
 
   ensureConfigured() {
-    if (!this.isConfigured()) {
+    if (!this.contract) {
       const error = new Error(BLOCKCHAIN_CONFIG_ERROR);
       error.status = 503;
-      error.statusCode = 503;
       throw error;
     }
   }
+
 
   async getBalance(address) {
+    this.ensureConfigured();
     try {
-      this.ensureConfigured();
-
-      if (!ethers.isAddress(address)) {
-        throw new Error('Invalid address format');
-      }
-
       const balanceRaw = await this.contract.balanceOf(address);
       return ethers.formatUnits(balanceRaw, 18);
-    } catch (error) {
-      console.error(`Error getting balance for ${address}:`, error.message);
+    } catch (err) {
+      const error = new Error('Failed to fetch balance from blockchain');
+      error.status = 502;
       throw error;
     }
   }
 
-  async getTokenDetails() {
-    try {
-      this.ensureConfigured();
-
-      const [name, symbol, supply] = await Promise.all([
-        this.contract.name(),
-        this.contract.symbol(),
-        this.contract.totalSupply(),
-      ]);
-
-      return {
-        name,
-        symbol,
-        totalSupply: ethers.formatUnits(supply, 18),
-      };
-    } catch (error) {
-      console.error('Error fetching token details:', error);
-      throw error;
-    }
-  }
-
-  async getContractName() {
+ 
+  async fundAccount(toAddress, amountEth = '0.005') {
     this.ensureConfigured();
-    return this.contract.name();
+    try {
+      const accounts = await this.provider.listAccounts();
+      if (!accounts || accounts.length === 0) {
+        const error = new Error('No accounts available on provider for faucet');
+        error.status = 502;
+        throw error;
+      }
+      let adminSigner;
+      // accounts may be strings (addresses) or Signer-like objects depending on provider
+      if (typeof accounts[0] === 'string') {
+        adminSigner = this.provider.getSigner(accounts[0]);
+      } else if (accounts[0] && typeof accounts[0].sendTransaction === 'function') {
+        adminSigner = accounts[0];
+      } else {
+        adminSigner = this.provider.getSigner(0);
+      }
+      
+      console.log(`⛽ Funding ${toAddress} with ${amountEth} ETH...`);
+      const tx = await adminSigner.sendTransaction({
+        to: toAddress,
+        value: ethers.parseEther(String(amountEth))
+      });
+
+      await this.waitForTransaction(tx.hash);
+      console.log(`✅ Funding confirmed for ${toAddress}`);
+      return tx.hash;
+    } catch (err) {
+      console.error('❌ Faucet failed:', err.message);
+      const error = new Error('Faucet funding failed');
+      error.status = 502;
+      throw error;
+    }
   }
 
+  
   async transfer({ fromAddress, toAddress, amount }) {
     this.ensureConfigured();
-
-    if (!ethers.isAddress(fromAddress) || !ethers.isAddress(toAddress)) {
-      const error = new Error("Invalid wallet address");
-      error.status = 400;
-      throw error;
-    }
-
-    const amountNumber = Number(amount);
-    if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
-      const error = new Error("Invalid amount");
-      error.status = 400;
-      throw error;
-    }
-
     try {
-      let signer;
-      try {
-        // Try getting signer (only works if node manages keys)
-        signer = await this.provider.getSigner(fromAddress);
-      } catch (e) {
-        console.warn(`Signer for ${fromAddress} unavailable. Using Admin Account (Demo Faucet Mode).`);
-        const accounts = await this.provider.listAccounts();
-        signer = accounts[0];
-      }
-
+      const signer = await this.provider.getSigner(fromAddress);
       const contractWithSigner = this.contract.connect(signer);
       const value = ethers.parseUnits(String(amount), 18);
 
-      console.log(`Initiating transfer: ${amount} tokens to ${toAddress}`);
       const txResponse = await contractWithSigner.transfer(toAddress, value);
-
+      
+      const receipt = await this.waitForTransaction(txResponse.hash);
+      
+      if (receipt.status === 0) throw new Error('Transaction reverted on-chain');
+      
       return txResponse.hash;
-    } catch (error) {
-      console.error("Blockchain Transfer Error:", error);
-      throw new Error(`Transfer failed: ${error.message}`);
+    } catch (err) {
+      console.error('❌ Blockchain Transfer Error:', err.message);
+      const error = new Error(err.message || 'Transfer failed');
+      error.status = err.status || 502;
+      throw error;
     }
   }
 
-  async waitForTransaction(txHash) {
+  // expose admin signer for tests and internal use
+  async _getAdminSigner() {
     this.ensureConfigured();
+    const accounts = await this.provider.listAccounts();
+    if (!accounts || accounts.length === 0) {
+      const error = new Error('No accounts available on provider for admin actions');
+      error.status = 502;
+      throw error;
+    }
+    if (typeof accounts[0] === 'string') return this.provider.getSigner(accounts[0]);
+    if (accounts[0] && typeof accounts[0].sendTransaction === 'function') return accounts[0];
+    return this.provider.getSigner(0);
+  }
 
+  async waitForTransaction(txHash, confirmations = 1) {
     try {
-      const receipt = await this.provider.waitForTransaction(txHash);
-
-      if (!receipt) {
-        const error = new Error(`Transaction receipt not found for ${txHash}`);
-        error.status = 502;
-        error.statusCode = 502;
-        throw error;
-      }
-
+      const receipt = await this.provider.waitForTransaction(txHash, confirmations);
+      if (!receipt) throw new Error('Receipt not found');
       return receipt;
-    } catch (error) {
-      console.error(`Error waiting for transaction ${txHash}:`, error);
+    } catch (err) {
+      const error = new Error('Transaction confirmation timeout or error');
+      error.status = 502;
       throw error;
     }
   }

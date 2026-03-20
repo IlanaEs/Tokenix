@@ -1,8 +1,8 @@
-const { buildModule } = require("@nomicfoundation/hardhat-ignition/modules");
+import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
 
 const DEFAULT_MAX_SUPPLY = 1_000_000n * 10n ** 18n;
 
-module.exports = buildModule("TokenModule", (m) => {
+export default buildModule("TokenModule", (m) => {
   const name = m.getParameter("name", "Tokenix");
   const symbol = m.getParameter("symbol", "TNX");
   const initialOwner = m.getAccount(0);
@@ -11,9 +11,9 @@ module.exports = buildModule("TokenModule", (m) => {
   // deployment
   const token = m.contract("MyToken", [name, symbol, initialOwner, maxSupply]);
 
-  // Mint an initial supply to the owner for testing purposes
-  const initialMintAmount = 1000n * 10n ** 18n;
-  m.call(token, "mint", [initialOwner, initialMintAmount]);
+  // NOTE: initial minting is intentionally removed. Initial supply should be
+  // managed by the backend via API calls to keep deployments idempotent and
+  // wallet balances deterministic for tests and UI.
 
   return { token };
 });

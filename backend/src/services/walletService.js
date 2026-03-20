@@ -3,6 +3,47 @@ import BlockchainClient from "./BlockchainClient.js";
 
 const blockchainClient = new BlockchainClient();
 
+// Background funding/logging helper — non-blocking from API flow
+async function _fundAndLogWallet(userId, walletAddress) {
+  try {
+    // create a pending transaction record for the funding action
+    const insertQ = `
+      INSERT INTO transactions (user_id, from_address, to_address, amount, tx_hash, status)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING tx_id
+    `;
+
+    // attempt to fund via blockchain client
+    const txHash = await blockchainClient.fundAccount(walletAddress);
+
+    // update transaction as confirmed after wait
+    const receipt = await blockchainClient.waitForTransaction(txHash);
+
+    const updateQ = `
+      UPDATE transactions SET tx_hash = $1, status = $2, confirmed_at = NOW() WHERE tx_id = $3
+    `;
+
+    // insert a record of the funding (mark confirmed)
+    const { rows } = await pool.query(insertQ, [userId, null, walletAddress, null, txHash, 'PENDING']);
+    const txId = rows[0].tx_id;
+    await pool.query(updateQ, [txHash, 'CONFIRMED', txId]);
+
+    console.log(`Funding successful for wallet ${walletAddress}: ${txHash}`);
+  } catch (err) {
+    try {
+      // log failed funding attempt
+      await pool.query(
+        `INSERT INTO transactions (user_id, from_address, to_address, amount, tx_hash, status, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+        [userId, null, walletAddress, null, err?.txHash || null, 'FAILED']
+      );
+    } catch (dbErr) {
+      console.error('Failed to log failed funding attempt:', dbErr);
+    }
+    console.error(`Funding failed for wallet ${walletAddress}:`, err);
+  }
+}
+
 export async function createWallet({ userId, walletAddress, publicKey }) {
   const q = `
     INSERT INTO wallets (user_id, wallet_address, public_key)
@@ -15,7 +56,14 @@ export async function createWallet({ userId, walletAddress, publicKey }) {
 
   try {
     const { rows } = await pool.query(q, values);
-    return rows[0];
+    const created = rows[0];
+
+    // Kick off funding as a background task; don't block the API response
+    _fundAndLogWallet(created.userId, created.walletAddress).catch(err => {
+      console.error('Background funding task error:', err);
+    });
+
+    return created;
   } catch (e) {
     if (e.code === "23505") {
       const error = new Error("Wallet already exists");

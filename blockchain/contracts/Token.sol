@@ -17,7 +17,7 @@ contract MyToken is ERC20, Ownable {
     }
 
     function mint(address to, uint256 amount) public onlyOwner {
-        require(totalSupply() + amount <= maxSupply, "Tokenix: Exceeds max supply");
+        require(totalSupply() + amount <= maxSupply, "ERC20: Exceeds max supply");
         _mint(to, amount);
     }
 }

@@ -6,7 +6,7 @@
   "main": "index.js",
   "scripts": {
   "compile": "npx hardhat compile",
-  "deploy:local": "npx hardhat ignition deploy ./ignition/modules/Token.cjs --network localhost",
+  "deploy:local": "npx hardhat ignition deploy ./ignition/modules/Token.js --network localhost",
   "sync": "node scripts/sync-abi.js",
   "full-deploy": "npm run compile && npm run deploy:local && npm run sync",
   "test": "npx hardhat test --network localhost"
