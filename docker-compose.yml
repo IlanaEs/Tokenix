@@ -39,12 +39,13 @@ services:
     build:
       context: ./blockchain
     container_name: tokenix-hardhat
-    command: npx hardhat node
+    entrypoint: ["/bin/sh", "-c", "/entrypoint.sh"]
     ports:
       - "8545:8545"
     volumes:
       - ./backend/src/abi:/backend/src/abi
       - ./frontend/src/abi:/frontend/src/abi
+      - ./blockchain/entrypoint.sh:/entrypoint.sh:ro
 
 volumes:
   tokenix_pgdata:
