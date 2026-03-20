@@ -1,45 +1,110 @@
 import { pool } from "../db.js";
 import BlockchainClient from "./BlockchainClient.js";
+import { TRANSACTION_TYPES } from "./transactionService.js";
 
 const blockchainClient = new BlockchainClient();
 
-// Background funding/logging helper — non-blocking from API flow
 async function _fundAndLogWallet(userId, walletAddress) {
+  let txId = null;
+  let txHash = null;
+
   try {
-    // create a pending transaction record for the funding action
+    // Wallet creation should succeed even if blockchain funding finishes a bit
+    // later, so we persist a pending funding row before sending the ETH.
+    blockchainClient.ensureConfigured();
+
     const insertQ = `
-      INSERT INTO transactions (user_id, from_address, to_address, amount, tx_hash, status)
-      VALUES ($1, $2, $3, $4, $5, $6)
-      RETURNING tx_id
+      INSERT INTO transactions (user_id, type, from_address, to_address, amount, status, created_at)
+      VALUES ($1, $2, $3, $4, $5, $6, NOW())
+      RETURNING tx_id AS "txId"
     `;
 
-    // attempt to fund via blockchain client
-    const txHash = await blockchainClient.fundAccount(walletAddress);
+    const inserted = await pool.query(insertQ, [
+      userId,
+      TRANSACTION_TYPES.SYSTEM_FUNDING,
+      null,
+      walletAddress,
+      null,
+      "PENDING",
+    ]);
 
-    // update transaction as confirmed after wait
+    txId = inserted.rows[0].txId;
+
+    txHash = await blockchainClient.fundAccount(walletAddress);
+
+    await pool.query(
+      `
+      UPDATE transactions
+      SET tx_hash = $1
+      WHERE tx_id = $2
+      `,
+      [txHash, txId]
+    );
+
     const receipt = await blockchainClient.waitForTransaction(txHash);
 
-    const updateQ = `
-      UPDATE transactions SET tx_hash = $1, status = $2, confirmed_at = NOW() WHERE tx_id = $3
-    `;
-
-    // insert a record of the funding (mark confirmed)
-    const { rows } = await pool.query(insertQ, [userId, null, walletAddress, null, txHash, 'PENDING']);
-    const txId = rows[0].tx_id;
-    await pool.query(updateQ, [txHash, 'CONFIRMED', txId]);
-
-    console.log(`Funding successful for wallet ${walletAddress}: ${txHash}`);
-  } catch (err) {
-    try {
-      // log failed funding attempt
+    if (receipt.status === 1n || receipt.status === 1) {
       await pool.query(
-        `INSERT INTO transactions (user_id, from_address, to_address, amount, tx_hash, status, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-        [userId, null, walletAddress, null, err?.txHash || null, 'FAILED']
+        `
+        UPDATE transactions
+        SET status = 'CONFIRMED',
+            confirmed_at = NOW()
+        WHERE tx_id = $1
+        `,
+        [txId]
       );
-    } catch (dbErr) {
-      console.error('Failed to log failed funding attempt:', dbErr);
+
+      console.log(`Funding successful for wallet ${walletAddress}: ${txHash}`);
+      return;
     }
+
+    await pool.query(
+      `
+      UPDATE transactions
+      SET status = 'FAILED'
+      WHERE tx_id = $1
+      `,
+      [txId]
+    );
+  } catch (err) {
+    if (txId) {
+      try {
+        await pool.query(
+          `
+          UPDATE transactions
+          SET status = 'FAILED',
+              tx_hash = COALESCE($1, tx_hash)
+          WHERE tx_id = $2
+          `,
+          [txHash || err?.txHash || null, txId]
+        );
+      } catch (dbErr) {
+        console.error("Failed to update failed funding attempt:", dbErr);
+      }
+    } else {
+      try {
+        await pool.query(
+          `
+          INSERT INTO transactions
+            (user_id, type, from_address, to_address, amount, tx_hash, status, created_at)
+          VALUES
+            ($1, $2, $3, $4, $5, $6, $7, NOW())
+          `,
+          [
+            userId,
+            TRANSACTION_TYPES.SYSTEM_FUNDING,
+            null,
+            walletAddress,
+            null,
+            txHash || err?.txHash || null,
+            "FAILED",
+          ]
+        );
+      } catch (dbErr) {
+        console.error("Failed to log failed funding attempt:", dbErr);
+      }
+    }
+
     console.error(`Funding failed for wallet ${walletAddress}:`, err);
   }
 }
@@ -58,9 +123,8 @@ export async function createWallet({ userId, walletAddress, publicKey }) {
     const { rows } = await pool.query(q, values);
     const created = rows[0];
 
-    // Kick off funding as a background task; don't block the API response
-    _fundAndLogWallet(created.userId, created.walletAddress).catch(err => {
-      console.error('Background funding task error:', err);
+    _fundAndLogWallet(created.userId, created.walletAddress).catch((err) => {
+      console.error("Background funding task error:", err);
     });
 
     return created;

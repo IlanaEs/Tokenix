@@ -22,6 +22,8 @@ services:
       PORT: 3000
     ports:
       - "3000:3000"
+    volumes:
+      - ./backend/src/abi:/app/src/abi
     depends_on:
       - db
       - hardhat
@@ -40,6 +42,9 @@ services:
     command: npx hardhat node
     ports:
       - "8545:8545"
+    volumes:
+      - ./backend/src/abi:/backend/src/abi
+      - ./frontend/src/abi:/frontend/src/abi
 
 volumes:
   tokenix_pgdata:

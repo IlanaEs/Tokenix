@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS wallets (
 CREATE TABLE IF NOT EXISTS transactions (
   tx_id SERIAL PRIMARY KEY,
   user_id INTEGER REFERENCES users(user_id),
+  type TEXT NOT NULL DEFAULT 'USER_TRANSFER'
+    CHECK (type IN ('SYSTEM_FUNDING', 'USER_TRANSFER')),
   from_address TEXT,
   to_address TEXT,
   amount NUMERIC,
