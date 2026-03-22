@@ -42,13 +42,13 @@ services:
     # Run the script via the shell so execution permission is not required on the
     # mounted file (Windows mounts can remove the +x bit). This executes the
     # script's contents with `sh` and does not depend on the file's executable flag.
-    command: ["sh", "/entrypoint.sh"]
+    command: ["sh", "/app/entrypoint.sh"]
     ports:
       - "8545:8545"
     volumes:
       - ./backend/src/abi:/backend/src/abi
       - ./frontend/src/abi:/frontend/src/abi
-      - ./blockchain/entrypoint.sh:/entrypoint.sh:ro
+      - ./blockchain/entrypoint.sh:/app/entrypoint.sh:ro
 
 volumes:
   tokenix_pgdata:

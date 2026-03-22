@@ -9,9 +9,9 @@ COPY . .
 
 # Ensure entrypoint is available at root and executable in the Linux image
 # Copy the script to /entrypoint.sh so docker-compose can always call it
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
 EXPOSE 8545
 
-ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/bin/sh", "-c", "./entrypoint.sh"]
