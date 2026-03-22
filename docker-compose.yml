@@ -39,7 +39,10 @@ services:
     build:
       context: ./blockchain
     container_name: tokenix-hardhat
-    entrypoint: ["/bin/sh", "-c", "/entrypoint.sh"]
+    # Run the script via the shell so execution permission is not required on the
+    # mounted file (Windows mounts can remove the +x bit). This executes the
+    # script's contents with `sh` and does not depend on the file's executable flag.
+    command: ["sh", "/entrypoint.sh"]
     ports:
       - "8545:8545"
     volumes:
