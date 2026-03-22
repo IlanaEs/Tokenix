@@ -45,6 +45,12 @@ export default class BlockchainClient {
     }
   }
 
+  _ensureInitialized() {
+    if (!this.contract) {
+      this._initialize();
+    }
+  }
+
   setupEventListeners() {
     if (this.isListening || !this.contract) return;
 
@@ -57,15 +63,39 @@ export default class BlockchainClient {
   }
 
   isConfigured() {
+    this._ensureInitialized();
     return this.contract !== null;
   }
 
   ensureConfigured() {
+    this._ensureInitialized();
     if (!this.contract) {
       const error = new Error(BLOCKCHAIN_CONFIG_ERROR);
-      error.status = 503;
+      error.status = 502;
       throw error;
     }
+  }
+
+  async getContractName() {
+    this.ensureConfigured();
+
+    try {
+      return await this.contract.name();
+    } catch (err) {
+      console.error('❌ getContractName failed:', err.message);
+      const error = new Error('Failed to fetch contract name from blockchain');
+      error.status = 502;
+      throw error;
+    }
+  }
+
+  async getContractInfo() {
+    const contractName = await this.getContractName();
+
+    return {
+      contractAddress: this.contractAddress,
+      contractName,
+    };
   }
 
 

@@ -23,11 +23,18 @@ app.get('/health', async (req, res) => {
 
 app.get('/health/contract', async (req, res) => {
   try {
-    const contractName = await blockchainClient.getContractName();
-    return res.status(200).json({ status: 'ok', contractName });
+    const { contractAddress, contractName } = await blockchainClient.getContractInfo();
+    return res.status(200).json({
+      status: 'ok',
+      contractAddress,
+      contractName,
+    });
   } catch (err) {
     console.error(err);
-    return res.status(err.status || err.statusCode || 500).json({
+    const status = err.status || err.statusCode || 500;
+    const responseStatus = status === 500 ? 500 : 502;
+
+    return res.status(responseStatus).json({
       status: 'error',
       message: err.message,
     });
