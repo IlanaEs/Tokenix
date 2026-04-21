@@ -3,7 +3,7 @@
 Tokenix is a full-stack project for user authentication, wallet creation, balance display, and backend-orchestrated token transfers on a local ERC-20 smart contract.
 The repository combines a React frontend, an Express backend, PostgreSQL, and a Hardhat blockchain environment.
 
-![Tokenix architecture overview](docs/assets/tokenix_readme_architecture.svg)
+![Tokenix architecture overview](docs/assets/tokenix_dark_clean.svg)
 
 The current implementation is backend-centric:
 
