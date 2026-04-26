@@ -1,14 +1,41 @@
 import { useState } from "react";
-import { transferTokens } from "../lib/api";
-import { shortHash } from "../lib/format";
+import { ethers } from "ethers";
+import { getErrorMessage, transferTokens } from "../lib/api";
+
+function validateRecipient(value) {
+  if (!value) {
+    return "Enter a recipient wallet address.";
+  }
+
+  if (!ethers.isAddress(value)) {
+    return "Enter a valid wallet address.";
+  }
+
+  return "";
+}
+
+function validateAmount(value) {
+  if (!value) {
+    return "Enter an amount.";
+  }
+
+  if (!/^\d+(\.\d+)?$/.test(value)) {
+    return "Use numbers only, for example 1 or 0.25.";
+  }
+
+  const parsedAmount = Number(value);
+  if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+    return "Amount must be greater than 0.";
+  }
+
+  return "";
+}
 
 export default function SendTokens({ onBack }) {
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [txHash, setTxHash] = useState("");
-  const [showSuccess, setShowSuccess] = useState(false);
 
   function clearFeedbackOnEdit() {
     if (error) {
@@ -20,132 +47,104 @@ export default function SendTokens({ onBack }) {
     event.preventDefault();
 
     const trimmedRecipient = recipient.trim();
-    const parsedAmount = Number(amount);
+    const trimmedAmount = amount.trim();
+    const recipientError = validateRecipient(trimmedRecipient);
+    const amountError = validateAmount(trimmedAmount);
 
-    if (!trimmedRecipient.startsWith("0x")) {
-      setError('Recipient address must start with "0x"');
-      setShowSuccess(false);
-      setTxHash("");
+    if (recipientError) {
+      setError(recipientError);
       return;
     }
 
-    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-      setError("Amount must be greater than 0");
-      setShowSuccess(false);
-      setTxHash("");
+    if (amountError) {
+      setError(amountError);
       return;
     }
 
+    setRecipient(trimmedRecipient);
+    setAmount(trimmedAmount);
     setLoading(true);
     setError("");
-    setShowSuccess(false);
-    setTxHash("");
 
     try {
-      const result = await transferTokens(trimmedRecipient, parsedAmount);
-      setShowSuccess(true);
-      setTxHash(result?.txHash || "");
-    } catch (err) {
-      setError(err?.message || "Failed to send tokens");
+      await transferTokens(trimmedRecipient, trimmedAmount);
+    } catch (requestError) {
+      setError(
+        getErrorMessage(
+          requestError,
+          "Transfers are not available yet."
+        )
+      );
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div style={{ padding: 40 }}>
-      <h2>Send Tokens</h2>
+    <div className="card screen">
+      <div>
+        <h2>Send Tokens</h2>
+        <p className="helperText">
+          This form now matches the current backend request shape, but real sending stays blocked until app-created wallets can sign safely and receive tokens reliably.
+        </p>
+      </div>
 
-      <form onSubmit={handleSubmit}>
-        <div>
+      <div className="notice warning">
+        <strong>Transfer sending intentionally disabled</strong>
+        <p>The backend route exists, but real user transfers are still blocked by the current signer and token provisioning model.</p>
+      </div>
+
+      <form className="formStack" onSubmit={handleSubmit}>
+        <label className="fieldLabel">
+          Recipient address
           <input
+            className="input mono"
             type="text"
-            placeholder="Recipient address (0x...)"
+            placeholder="0x..."
             value={recipient}
-            onChange={(e) => {
+            onChange={(event) => {
               clearFeedbackOnEdit();
-              setRecipient(e.target.value);
+              setRecipient(event.target.value);
             }}
             disabled={loading}
             required
           />
-        </div>
+        </label>
 
-        <div style={{ marginTop: 10 }}>
+        <label className="fieldLabel">
+          Amount
           <input
-            type="number"
-            placeholder="Amount"
-            min="0"
-            step="any"
+            className="input"
+            type="text"
+            placeholder="1"
+            inputMode="decimal"
             value={amount}
-            onChange={(e) => {
+            onChange={(event) => {
               clearFeedbackOnEdit();
-              setAmount(e.target.value);
+              setAmount(event.target.value);
             }}
             disabled={loading}
             required
           />
-        </div>
+        </label>
 
-        <div style={{ marginTop: 20, display: "flex", gap: 10 }}>
-          <button type="submit" disabled={loading}>
-            {loading ? "Sending..." : "Send"}
+        <div className="actionsRow">
+          <button type="submit" className="btn" disabled={loading}>
+            {loading ? "Checking..." : "Validate Transfer Request"}
           </button>
 
-          <button type="button" onClick={onBack} disabled={loading}>
+          <button type="button" className="btn" onClick={onBack} disabled={loading}>
             Back
           </button>
         </div>
       </form>
 
-      {error && (
-        <p
-          style={{
-            marginTop: 20,
-            padding: 10,
-            border: "1px solid #f5c2c7",
-            borderRadius: 6,
-            background: "#f8d7da",
-            color: "#842029",
-          }}
-        >
-          {error}
-        </p>
-      )}
-
-      {showSuccess ? (
-        <div
-          style={{
-            marginTop: 20,
-            padding: 12,
-            border: "1px solid #ddd",
-            borderRadius: 6,
-          }}
-        >
-          <strong>Transaction Status</strong>
-          <p style={{ marginTop: 10 }}>Transaction Pending...</p>
-          {txHash && (
-            <p style={{ marginTop: 10, marginBottom: 0 }}>
-              <strong>txHash:</strong>{" "}
-              <code title={txHash}>{shortHash(txHash)}</code>
-            </p>
-          )}
+      {error ? (
+        <div className="notice error">
+          <strong>Transfer blocked</strong>
+          <p>{error}</p>
         </div>
-      ) : (
-        <div
-          style={{
-            marginTop: 20,
-            padding: 12,
-            border: "1px solid #ddd",
-            borderRadius: 6,
-            background: "#f8f9fa",
-            color: "#495057",
-          }}
-        >
-          <strong>Transaction Status</strong>: Transaction status will appear
-          here after transfer is implemented.
-        </div>
-      )}
+      ) : null}
     </div>
   );
 }

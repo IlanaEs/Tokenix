@@ -1,6 +1,15 @@
 import { useState } from "react";
 import { login } from "../lib/auth";
+import { ApiError, getErrorMessage } from "../lib/api";
 import { setToken } from "../lib/token";
+
+function getLoginErrorMessage(error) {
+  if (error instanceof ApiError && error.status === 401) {
+    return "Email or password is incorrect.";
+  }
+
+  return getErrorMessage(error, "Unable to log in.");
+}
 
 export default function Login({ onSuccess, onShowRegister }) {
   const [email, setEmail] = useState("");
@@ -8,55 +17,91 @@ export default function Login({ onSuccess, onShowRegister }) {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
-  async function handleSubmit(e) {
-    e.preventDefault();
+  async function handleSubmit(event) {
+    event.preventDefault();
+
+    const trimmedEmail = email.trim();
+
+    if (!trimmedEmail) {
+      setMessage("Enter your email address.");
+      return;
+    }
+
+    if (!password.trim()) {
+      setMessage("Enter your password.");
+      return;
+    }
+
     setLoading(true);
     setMessage("");
 
     try {
-      const res = await login(email, password);
-      setToken(res.token);
+      const response = await login(trimmedEmail, password);
+      setToken(response.token);
       onSuccess?.();
-    } catch (err) {
-      setMessage(err.message);
+    } catch (error) {
+      setMessage(getLoginErrorMessage(error));
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div style={{ padding: 40 }}>
-      <h2>Login</h2>
-      <form onSubmit={handleSubmit}>
-        <div>
+    <div className="card screen">
+      <div>
+        <h2>Login</h2>
+        <p className="helperText">Sign in to load your saved wallet address and UI state.</p>
+      </div>
+
+      <form className="formStack" onSubmit={handleSubmit}>
+        <label className="fieldLabel">
+          Email
           <input
+            className="input"
             type="email"
             placeholder="Email"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(event) => setEmail(event.target.value)}
+            autoComplete="email"
+            disabled={loading}
             required
           />
-        </div>
+        </label>
 
-        <div style={{ marginTop: 10 }}>
+        <label className="fieldLabel">
+          Password
           <input
+            className="input"
             type="password"
             placeholder="Password"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(event) => setPassword(event.target.value)}
+            autoComplete="current-password"
+            disabled={loading}
             required
           />
-        </div>
+        </label>
 
-        <button style={{ marginTop: 20 }} disabled={loading}>
+        <button className="btn" disabled={loading}>
           {loading ? "Logging in..." : "Login"}
         </button>
       </form>
 
-      {message && <p style={{ marginTop: 20 }}>{message}</p>}
-      <p style={{ marginTop: 20 }}>
+      {message ? (
+        <div className="notice error">
+          <strong>Login failed</strong>
+          <p>{message}</p>
+        </div>
+      ) : null}
+
+      <p className="helperText">
         Need an account?{" "}
-        <button type="button" onClick={onShowRegister}>
+        <button
+          type="button"
+          className="inlineAction"
+          onClick={onShowRegister}
+          disabled={loading}
+        >
           Register
         </button>
       </p>

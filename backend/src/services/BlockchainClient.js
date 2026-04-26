@@ -9,6 +9,7 @@ const __dirname = path.dirname(__filename);
 const ABI_PATH = path.join(__dirname, '../abi/MyToken.json');
 const DEFAULT_RPC_URL = process.env.RPC_URL || 'http://hardhat:8545';
 const BLOCKCHAIN_CONFIG_ERROR = 'Blockchain client is not configured: missing ABI/Contract Address';
+const ENABLE_TRANSFER_EVENT_LOGS = process.env.ENABLE_TRANSFER_EVENT_LOGS === 'true';
 
 export default class BlockchainClient {
   constructor() {
@@ -38,8 +39,10 @@ export default class BlockchainClient {
 
       this.contract = new ethers.Contract(this.contractAddress, abi, this.provider);
       console.log(`✅ BlockchainClient connected to: ${this.contractAddress}`);
-      
-      this.setupEventListeners();
+
+      if (ENABLE_TRANSFER_EVENT_LOGS) {
+        this.setupEventListeners();
+      }
     } catch (err) {
       console.error('❌ Failed to initialize BlockchainClient:', err.message);
     }

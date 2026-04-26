@@ -12,6 +12,10 @@ export default defineConfig({
         target: "http://backend:3000",
         changeOrigin: true,
       },
+      "/transactions": {
+        target: "http://backend:3000",
+        changeOrigin: true,
+      },
       "/wallet": {
         target: "http://backend:3000",
         changeOrigin: true,

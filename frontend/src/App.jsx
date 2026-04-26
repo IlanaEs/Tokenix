@@ -6,17 +6,37 @@ import Wallet from "./pages/Wallet.jsx";
 import SendTokens from "./pages/SendTokens.jsx";
 import TransactionHistory from "./pages/TransactionHistory.jsx";
 
+const PROTECTED_MODES = new Set(["wallet", "sendTokens", "history"]);
+
 export default function App() {
   const [mode, setMode] = useState(() => (getToken() ? "wallet" : "login"));
+  const isAuthenticated = Boolean(getToken());
+
+  let activeMode = mode;
+
+  if (!isAuthenticated && PROTECTED_MODES.has(activeMode)) {
+    activeMode = "login";
+  } else if (isAuthenticated && (activeMode === "login" || activeMode === "register")) {
+    activeMode = "wallet";
+  }
+
+  function showMode(nextMode) {
+    if (!isAuthenticated && PROTECTED_MODES.has(nextMode)) {
+      setMode("login");
+      return;
+    }
+
+    setMode(nextMode);
+  }
 
   return (
-    <div style={{ maxWidth: 520, margin: "0 auto" }}>
-      {mode === "wallet" ? (
-        getToken() ? (
+    <div className="appShell">
+      {activeMode === "wallet" ? (
+        isAuthenticated ? (
           <Wallet
             onLogout={() => setMode("login")}
-            onShowSendTokens={() => setMode("sendTokens")}
-            onShowHistory={() => setMode("history")}
+            onShowSendTokens={() => showMode("sendTokens")}
+            onShowHistory={() => showMode("history")}
           />
         ) : (
           <Login
@@ -24,11 +44,11 @@ export default function App() {
             onShowRegister={() => setMode("register")}
           />
         )
-      ) : mode === "history" ? (
+      ) : activeMode === "history" ? (
         <TransactionHistory onBack={() => setMode("wallet")} />
-      ) : mode === "sendTokens" ? (
+      ) : activeMode === "sendTokens" ? (
         <SendTokens onBack={() => setMode("wallet")} />
-      ) : mode === "register" ? (
+      ) : activeMode === "register" ? (
         <Register
           onSuccess={() => setMode("wallet")}
           onShowLogin={() => setMode("login")}
