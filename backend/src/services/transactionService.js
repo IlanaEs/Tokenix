@@ -59,6 +59,39 @@ function normalizeTransferInput({ toAddress, amount }) {
   };
 }
 
+export function buildTransferMessage({ amount, toAddress }) {
+  return `Transfer ${amount} TNX to ${toAddress}`;
+}
+
+export function verifySignature(message, signature, expectedAddress) {
+  if (!message || !signature || !expectedAddress) {
+    const error = new Error("Signature verification data is incomplete");
+    error.status = 400;
+    throw error;
+  }
+
+  let recoveredAddress;
+
+  try {
+    recoveredAddress = ethers.verifyMessage(message, signature);
+  } catch (error) {
+    const signatureError = new Error("Invalid signature");
+    signatureError.status = 401;
+    throw signatureError;
+  }
+
+  const recoveredChecksum = ethers.getAddress(recoveredAddress);
+  const expectedChecksum = ethers.getAddress(expectedAddress);
+
+  if (recoveredChecksum !== expectedChecksum) {
+    const signatureError = new Error("Invalid signature");
+    signatureError.status = 401;
+    throw signatureError;
+  }
+
+  return recoveredChecksum;
+}
+
 async function markTransactionConfirmed(txId) {
   await pool.query(
     `
@@ -98,6 +131,19 @@ function finalizeTransactionInBackground(txId, txHash) {
       await markTransactionFailed(txId);
     }
   })();
+}
+
+async function ensureSufficientTokenBalance(fromAddress, amount) {
+  blockchainClient.ensureConfigured();
+
+  const currentBalance = ethers.parseUnits(await blockchainClient.getBalance(fromAddress), 18);
+  const requestedAmount = ethers.parseUnits(String(amount), 18);
+
+  if (currentBalance < requestedAmount) {
+    const error = new Error('Insufficient TNX balance');
+    error.status = 400;
+    throw error;
+  }
 }
 
 export async function getTransactionsByUserId(userId, type = null) {
@@ -158,11 +204,14 @@ export async function createPendingTransaction({
   return rows[0];
 }
 
-export async function processTransferE2E({ userId, toAddress, amount }) {
-  blockchainClient.ensureConfigured();
-
+export async function processTransferE2E({ userId, toAddress, amount, signature }) {
   const normalized = normalizeTransferInput({ toAddress, amount });
   const fromAddress = await getUserWalletAddress(userId);
+  const transferMessage = buildTransferMessage(normalized);
+
+  verifySignature(transferMessage, signature, fromAddress);
+
+  await ensureSufficientTokenBalance(fromAddress, normalized.amount);
 
   const tx = await createPendingTransaction({
     userId,

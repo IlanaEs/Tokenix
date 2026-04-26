@@ -29,15 +29,22 @@ transactionRoutes.get("/", requireAuth, async (req, res) => {
 transactionRoutes.post("/transfer", requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
-    const { toAddress, amount } = req.body;
+    const { toAddress, amount, signature } = req.body;
 
-    if (toAddress === undefined || toAddress === null || amount === undefined || amount === null) {
-      return res.status(400).json({ error: "toAddress and amount are required" });
+    if (
+      toAddress === undefined ||
+      toAddress === null ||
+      amount === undefined ||
+      amount === null ||
+      signature === undefined ||
+      signature === null
+    ) {
+      return res.status(400).json({ error: "toAddress, amount, and signature are required" });
     }
 
-    const tx = await processTransferE2E({ userId, toAddress, amount });
+    const tx = await processTransferE2E({ userId, toAddress, amount, signature });
     return res.status(201).json(tx);
   } catch (err) {
-    return res.status(err.status || 500).json({ error: err.message });
+    return res.status(err.status || err.statusCode || 500).json({ error: err.message });
   }
 });
