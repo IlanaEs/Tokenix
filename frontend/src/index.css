@@ -14,6 +14,7 @@
 body{
   margin:0;
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  line-height: 1.5;
   color: var(--text);
   background: radial-gradient(1200px 700px at 20% 10%, rgba(96,165,250,.25), transparent 50%),
               radial-gradient(1000px 600px at 80% 20%, rgba(168,85,247,.20), transparent 55%),
@@ -22,8 +23,19 @@ body{
   min-height: 100vh;
 }
 
+#root{
+  min-height: 100vh;
+}
+
 .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
 .muted{ color: var(--muted); }
+.breakText{ overflow-wrap: anywhere; word-break: break-word; }
+
+.appShell{
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 48px 20px 28px;
+}
 
 .page{
   max-width: 980px;
@@ -69,6 +81,18 @@ body{
   box-shadow: 0 12px 40px rgba(0,0,0,0.25);
 }
 
+.screen{
+  display:flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.screen h2{
+  margin: 0;
+  font-size: 28px;
+  letter-spacing: -0.4px;
+}
+
 .cardTitle{
   font-weight: 650;
   margin-bottom: 12px;
@@ -93,6 +117,20 @@ body{
   margin: 10px 0;
   font-size: 13px;
   color: var(--muted);
+}
+
+.fieldLabel{
+  display:flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.formStack{
+  display:flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .input{
@@ -131,6 +169,18 @@ body{
   border-color: rgba(255,255,255,0.16);
 }
 
+.actionsRow{
+  display:flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.actionsRow .btn{
+  width: auto;
+  flex: 1 1 0;
+  min-width: 120px;
+}
+
 .status{
   margin-top: 14px;
   display:flex;
@@ -153,10 +203,119 @@ body{
 .status.warn .statusDot{ background: var(--warn); }
 .status.err .statusDot{ background: var(--err); }
 
+.helperText{
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.inlineAction{
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #9bc3ff;
+  cursor: pointer;
+  font: inherit;
+}
+
+.inlineAction:disabled{
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.notice{
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.03);
+}
+
+.notice strong{
+  display: block;
+}
+
+.notice p{
+  margin: 6px 0 0;
+}
+
+.notice.info{
+  border-color: rgba(96,165,250,0.32);
+  background: rgba(96,165,250,0.10);
+}
+
+.notice.warning{
+  border-color: rgba(245,184,75,0.35);
+  background: rgba(245,184,75,0.10);
+}
+
+.notice.error{
+  border-color: rgba(255,92,122,0.45);
+  background: rgba(255,92,122,0.12);
+  color: #ffe5eb;
+}
+
+.detailPanel{
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.03);
+}
+
+.detailLabel{
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.emptyState{
+  padding: 14px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  color: var(--muted);
+  background: rgba(255,255,255,0.02);
+}
+
+.listPanel{
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(255,255,255,0.02);
+}
+
+.listItem{
+  padding: 12px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+
+.listItem:first-child{
+  border-top: none;
+}
+
+.listItemHeader{
+  display:flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items:center;
+}
+
+.listItemMeta{
+  margin: 8px 0 0;
+}
+
 .footer{ margin-top: 14px; font-size: 13px; }
 
 @media (max-width: 860px){
   .grid{ grid-template-columns: 1fr; }
   .header{ flex-direction: column; align-items: flex-start; }
   .pill{ width: 100%; }
+  .actionsRow .btn{
+    min-width: 100%;
+  }
+}
+
+@media (max-width: 640px){
+  .appShell,
+  .page{
+    padding: 24px 14px 20px;
+  }
 }

@@ -1,134 +1,173 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ethers } from "ethers";
-import { apiFetch } from "../lib/api";
+import {
+  ApiError,
+  apiFetch,
+  getErrorMessage,
+} from "../lib/api";
 import { clearToken } from "../lib/token";
 
-function errorStatus(error) {
-  const message = error?.message || "";
-
-  const httpMatch = message.match(/^HTTP\s+(\d{3})\b/i);
-  if (httpMatch) {
-    return Number(httpMatch[1]);
-  }
-
-  const legacyMatch = message.match(/\((\d{3})\)/);
-  if (legacyMatch) {
-    return Number(legacyMatch[1]);
-  }
-
-  return null;
-}
+const LIVE_BALANCE_NOTICE =
+  "Balance is now loaded from the blockchain-backed wallet endpoint. If the Hardhat node, ABI sync, or contract runtime is unavailable, this request can still fail.";
 
 async function fetchBalance() {
   return apiFetch("/wallet/balance");
 }
 
 export default function Wallet({ onLogout, onShowSendTokens, onShowHistory }) {
-  const [walletAddress, setWalletAddress] = useState("");
-  const [balance, setBalance] = useState("");
+  const [wallet, setWallet] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState("");
-  const privateKeyRef = useRef(null);
+  const [loadingMessage, setLoadingMessage] = useState("Loading wallet...");
+  const [error, setError] = useState("");
 
-  useEffect(() => {
-    let active = true;
+  const loadWallet = useCallback(async () => {
+    setLoading(true);
+    setLoadingMessage("Loading wallet...");
+    setError("");
 
-    async function initWallet() {
-      setLoading(true);
-      setMessage("");
-
+    try {
       try {
-        try {
-          const existing = await fetchBalance();
-          if (active) {
-            setWalletAddress(existing.walletAddress || "");
-            setBalance(existing.balance ?? "");
-          }
-          return;
-        } catch (error) {
-          const status = errorStatus(error);
-          if (status !== 404) {
-            throw error;
-          }
-        }
-
-        const wallet = ethers.Wallet.createRandom();
-        const publicKey = wallet.signingKey.publicKey;
-        const walletAddress = ethers.computeAddress(publicKey);
-        privateKeyRef.current = wallet.privateKey;
-
-        try {
-          await apiFetch("/wallet/create", {
-            method: "POST",
-            body: JSON.stringify({ walletAddress, publicKey }),
-          });
-        } catch (error) {
-          const status = errorStatus(error);
-
-          if (status !== 409) {
-            throw error;
-          }
-        }
-
-        const created = await fetchBalance();
-        if (active) {
-          setWalletAddress(created.walletAddress || "");
-          setBalance(created.balance ?? "");
-        }
-      } catch (error) {
-        const status = errorStatus(error);
-
-        if ((status === 401 || status === 403) && active) {
-          clearToken();
-          onLogout?.();
-          return;
-        }
-
-        if (active) {
-          setMessage(error?.message || "Failed to load wallet");
-        }
-      } finally {
-        if (active) {
-          setLoading(false);
+        const existing = await fetchBalance();
+        setWallet(existing);
+        return;
+      } catch (requestError) {
+        if (!(requestError instanceof ApiError) || requestError.status !== 404) {
+          throw requestError;
         }
       }
+
+      setLoadingMessage("Creating wallet...");
+      const generatedWallet = ethers.Wallet.createRandom();
+      const publicKey = generatedWallet.signingKey.publicKey;
+      const walletAddress = ethers.computeAddress(publicKey);
+
+      try {
+        await apiFetch("/wallet/create", {
+          method: "POST",
+          body: JSON.stringify({ walletAddress, publicKey }),
+        });
+      } catch (requestError) {
+        if (!(requestError instanceof ApiError) || requestError.status !== 409) {
+          throw requestError;
+        }
+      }
+
+      setLoadingMessage("Loading wallet...");
+      const created = await fetchBalance();
+      setWallet(created);
+    } catch (requestError) {
+      if (
+        requestError instanceof ApiError &&
+        (requestError.status === 401 || requestError.status === 403)
+      ) {
+        clearToken();
+        onLogout?.();
+        return;
+      }
+
+      setWallet(null);
+      setError(getErrorMessage(requestError, "Failed to load wallet."));
+    } finally {
+      setLoading(false);
     }
-
-    initWallet();
-
-    return () => {
-      active = false;
-    };
   }, [onLogout]);
 
-  return (
-    <div style={{ padding: 40 }}>
-      <h2>Wallet</h2>
-      {loading ? (
-        <p>Loading wallet...</p>
-      ) : (
-        <>
-          {message && <p>{message}</p>}
-          <p>
-            <strong>Wallet address:</strong> {walletAddress || "-"}
-          </p>
-          <p>
-            <strong>Balance:</strong> {balance || "0"}
-          </p>
-        </>
-      )}
+  useEffect(() => {
+    void loadWallet();
+  }, [loadWallet]);
 
-      <div style={{ marginTop: 20, display: "flex", gap: 10 }}>
-        <button type="button" onClick={onShowHistory}>
+  const walletAddress = wallet?.walletAddress || "";
+  const balance = wallet?.balance ?? "";
+  const balanceSource = wallet?.source || "";
+
+  return (
+    <div className="card screen">
+      <div>
+        <h2>Wallet</h2>
+        <p className="helperText">
+          Wallet setup is connected, and the balance shown here comes from the authenticated blockchain read path.
+        </p>
+      </div>
+
+      {loading ? (
+        <div className="notice info">
+          <strong>{loadingMessage}</strong>
+          <p>Checking your saved wallet address and current blockchain-backed balance response.</p>
+        </div>
+      ) : null}
+
+      {error ? (
+        <div className="notice error">
+          <strong>Unable to load wallet</strong>
+          <p>{error}</p>
+        </div>
+      ) : null}
+
+      {!loading && wallet ? (
+        <>
+          <div className="detailPanel">
+            <div className="detailLabel">Wallet address</div>
+            <div className="mono breakText">{walletAddress || "-"}</div>
+          </div>
+
+          <div className="detailPanel">
+            <div className="detailLabel">Balance</div>
+            <div>
+              <span className="big">{balance || "0"}</span>
+            </div>
+          </div>
+
+          {balanceSource ? (
+            <div className="detailPanel">
+              <div className="detailLabel">Source</div>
+              <div>{balanceSource}</div>
+            </div>
+          ) : null}
+
+          <div className="notice info">
+            <strong>Balance sourced from blockchain</strong>
+            <p>{LIVE_BALANCE_NOTICE}</p>
+          </div>
+        </>
+      ) : null}
+
+      {!loading && !wallet && !error ? (
+        <div className="emptyState">
+          Wallet information is not available yet. Try reloading to bootstrap the wallet again.
+        </div>
+      ) : null}
+
+      <div className="actionsRow">
+        <button
+          type="button"
+          className="btn"
+          onClick={() => void loadWallet()}
+          disabled={loading}
+        >
+          {loading ? "Loading..." : "Reload Wallet"}
+        </button>
+
+        <button
+          type="button"
+          className="btn"
+          onClick={onShowHistory}
+          disabled={loading || !wallet}
+        >
           History
         </button>
 
-        <button type="button" onClick={onShowSendTokens}>
+        <button
+          type="button"
+          className="btn"
+          onClick={onShowSendTokens}
+          disabled={loading || !wallet}
+        >
           Send Tokens
         </button>
 
         <button
           type="button"
+          className="btn"
           onClick={() => {
             clearToken();
             onLogout?.();
