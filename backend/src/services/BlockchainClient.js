@@ -8,6 +8,8 @@ const __dirname = path.dirname(__filename);
 
 const ABI_PATH = path.join(__dirname, '../abi/MyToken.json');
 const DEFAULT_RPC_URL = process.env.RPC_URL || 'http://hardhat:8545';
+const DEFAULT_ETH_FUNDING_AMOUNT = '0.005';
+const DEFAULT_TOKEN_PROVISION_AMOUNT = '100';
 const BLOCKCHAIN_CONFIG_ERROR = 'Blockchain client is not configured: missing ABI/Contract Address';
 const ENABLE_TRANSFER_EVENT_LOGS = process.env.ENABLE_TRANSFER_EVENT_LOGS === 'true';
 
@@ -115,7 +117,7 @@ export default class BlockchainClient {
   }
 
  
-  async fundAccount(toAddress, amountEth = '0.005') {
+  async fundAccount(toAddress, amountEth = DEFAULT_ETH_FUNDING_AMOUNT, tokenAmount = DEFAULT_TOKEN_PROVISION_AMOUNT) {
     this.ensureConfigured();
     try {
       const accounts = await this.provider.listAccounts();
@@ -124,29 +126,28 @@ export default class BlockchainClient {
         error.status = 502;
         throw error;
       }
-      let adminSigner;
-      // accounts may be strings (addresses) or Signer-like objects depending on provider
-      if (typeof accounts[0] === 'string') {
-        adminSigner = this.provider.getSigner(accounts[0]);
-      } else if (accounts[0] && typeof accounts[0].sendTransaction === 'function') {
-        adminSigner = accounts[0];
-      } else {
-        adminSigner = this.provider.getSigner(0);
-      }
-      
+      const adminSigner = await this._getAdminSigner();
+
       console.log(`⛽ Funding ${toAddress} with ${amountEth} ETH...`);
-      const tx = await adminSigner.sendTransaction({
+      const ethTx = await adminSigner.sendTransaction({
         to: toAddress,
         value: ethers.parseEther(String(amountEth))
       });
 
-      await this.waitForTransaction(tx.hash);
-      console.log(`✅ Funding confirmed for ${toAddress}`);
-      return tx.hash;
+      await this.waitForTransaction(ethTx.hash);
+      console.log(`✅ ETH funding confirmed for ${toAddress}`);
+
+      const mintAmount = ethers.parseUnits(String(tokenAmount), 18);
+      const mintTx = await this.contract.connect(adminSigner).mint(toAddress, mintAmount);
+
+      await this.waitForTransaction(mintTx.hash);
+      console.log(`✅ Minted ${ethers.formatUnits(mintAmount, 18)} TNX for ${toAddress}`);
+      return mintTx.hash;
     } catch (err) {
       console.error('❌ Faucet failed:', err.message);
       const error = new Error('Faucet funding failed');
       error.status = 502;
+      error.txHash = err?.txHash || null;
       throw error;
     }
   }
@@ -160,16 +161,13 @@ export default class BlockchainClient {
       const value = ethers.parseUnits(String(amount), 18);
 
       const txResponse = await contractWithSigner.transfer(toAddress, value);
-      
-      const receipt = await this.waitForTransaction(txResponse.hash);
-      
-      if (receipt.status === 0) throw new Error('Transaction reverted on-chain');
-      
+
       return txResponse.hash;
     } catch (err) {
       console.error('❌ Blockchain Transfer Error:', err.message);
       const error = new Error(err.message || 'Transfer failed');
       error.status = err.status || 502;
+      error.txHash = err?.txHash || null;
       throw error;
     }
   }
@@ -183,8 +181,6 @@ export default class BlockchainClient {
       error.status = 502;
       throw error;
     }
-    if (typeof accounts[0] === 'string') return this.provider.getSigner(accounts[0]);
-    if (accounts[0] && typeof accounts[0].sendTransaction === 'function') return accounts[0];
     return this.provider.getSigner(0);
   }
 
