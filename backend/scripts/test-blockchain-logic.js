@@ -145,7 +145,7 @@ async function main() {
       return originalTransfer.call(this, { fromAddress, toAddress, amount });
     };
 
-    const { buildTransferMessage, processTransferE2E } = await import('../src/services/transactionService.js');
+    const { buildSignedTransferMessage, processTransferE2E } = await import('../src/services/transactionService.js');
 
     const { userId } = await createTemporaryWalletRecord(senderWallet);
 
@@ -180,8 +180,13 @@ async function main() {
 
     await impersonateAccount(provider, senderAddress);
 
-    const transferMessage = buildTransferMessage({ amount: transferAmount, toAddress: recipientAddress });
-    const signature = await senderWallet.signMessage(transferMessage);
+    const transferMessage = {
+      fromAddress: senderAddress,
+      toAddress: recipientAddress,
+      amount: transferAmount,
+      timestamp: new Date().toISOString(),
+    };
+    const signature = await senderWallet.signMessage(buildSignedTransferMessage(transferMessage));
 
     console.log('Transfer message:', transferMessage);
     console.log('Submitting transfer through transactionService.processTransferE2E...');
@@ -190,6 +195,7 @@ async function main() {
       userId,
       toAddress: recipientAddress,
       amount: transferAmount,
+      message: transferMessage,
       signature,
     });
 
