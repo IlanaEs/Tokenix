@@ -1,8 +1,6 @@
 import { getToken } from "./token";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
-const TRANSFERS_BLOCKED_MESSAGE =
-  "Real transfers are still disabled in the frontend. The current backend signer and token provisioning flow is not safe to expose for app-created wallets yet.";
 
 export type AuthUser = {
   userId: number | string;
@@ -31,6 +29,31 @@ export type TransactionListItem = {
   fromAddress: string | null;
   toAddress: string | null;
   amount: string | null;
+  status: TransactionStatus;
+  txHash: string | null;
+  createdAt: string;
+  confirmedAt: string | null;
+};
+
+export type SignedTransferMessage = {
+  fromAddress: string;
+  toAddress: string;
+  amount: string;
+  timestamp: string;
+};
+
+export type SignedTransferRequest = {
+  toAddress: string;
+  amount: string;
+  message: SignedTransferMessage;
+  signature: string;
+};
+
+export type TransferResponse = {
+  txId: number | string;
+  fromAddress: string;
+  toAddress: string;
+  amount: string;
   status: TransactionStatus;
   txHash: string | null;
   createdAt: string;
@@ -187,16 +210,11 @@ export async function apiFetch<T>(
 }
 
 export async function transferTokens(
-  toAddress: string,
-  amount: string
-): Promise<TransactionListItem> {
-  void toAddress;
-  void amount;
-
-  throw new ApiError({
-    status: 503,
-    code: "FEATURE_UNAVAILABLE",
-    message: TRANSFERS_BLOCKED_MESSAGE,
+  request: SignedTransferRequest
+): Promise<TransferResponse> {
+  return apiFetch<TransferResponse>("/transactions/transfer", {
+    method: "POST",
+    body: JSON.stringify(request),
   });
 }
 
