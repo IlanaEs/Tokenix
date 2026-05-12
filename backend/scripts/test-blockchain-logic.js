@@ -1,18 +1,61 @@
-import process from 'process';
-import { randomUUID } from 'crypto';
-import { ethers } from 'ethers';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { pool } from '../src/db.js';
+import process from "process";
+import { randomUUID } from "crypto";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import { ethers } from "ethers";
 
-// Ensure RPC points to local Hardhat node
-process.env.RPC_URL = process.env.RPC_URL || 'http://127.0.0.1:8545';
-
+const API_BASE_URL = process.env.API_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
+const RPC_URL = process.env.RPC_URL || "http://127.0.0.1:8545";
+const TRANSFER_AMOUNT = "10";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-// normalize path on Windows and other platforms
-const ABI_FILE = path.resolve(__dirname, '../src/abi/MyToken.json');
+const tokenArtifact = JSON.parse(
+  fs.readFileSync(path.resolve(__dirname, "../src/abi/MyToken.json"), "utf8")
+);
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function request(path, options = {}) {
+  const response = await fetch(`${API_BASE_URL}${path}`, options);
+  const rawBody = await response.text();
+  let body = rawBody;
+
+  try {
+    body = rawBody ? JSON.parse(rawBody) : {};
+  } catch {
+    // Keep the raw body for diagnostics.
+  }
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status} ${path}: ${rawBody}`);
+  }
+
+  return body;
+}
+
+async function expectHttpError(path, options, expectedStatus) {
+  try {
+    await request(path, options);
+  } catch (error) {
+    if (error.message.includes(`HTTP ${expectedStatus} ${path}:`)) {
+      return;
+    }
+
+    throw error;
+  }
+
+  throw new Error(`Expected HTTP ${expectedStatus} for ${path}, but request succeeded.`);
+}
+
+function authHeaders(token) {
+  return {
+    "Authorization": `Bearer ${token}`,
+    "Content-Type": "application/json",
+  };
+}
 
 async function waitForRpcReady(provider, maxAttempts = 30, delayMs = 1000) {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -21,222 +64,155 @@ async function waitForRpcReady(provider, maxAttempts = 30, delayMs = 1000) {
       return;
     } catch (error) {
       if (attempt === maxAttempts - 1) {
-        throw new Error('Hardhat RPC not ready after waiting.');
+        throw new Error("Hardhat RPC not ready after waiting.");
       }
 
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      await sleep(delayMs);
     }
   }
 }
 
-async function waitForContractReady(provider, contractAddress, maxAttempts = 60, delayMs = 1000) {
+async function waitForWalletBalance(token, expectedMinimum, maxAttempts = 30, delayMs = 1000) {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const code = await provider.getCode(contractAddress);
-    if (code && code !== '0x') {
-      return;
+    const balance = await request("/wallet/balance", {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (Number(balance.balance) >= expectedMinimum) {
+      return balance;
     }
 
-    if (attempt === maxAttempts - 1) {
-      throw new Error(`Contract code not found at ${contractAddress} after waiting.`);
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    await sleep(delayMs);
   }
+
+  throw new Error(`Wallet balance did not reach ${expectedMinimum} TNX after waiting.`);
 }
 
-async function createTemporaryWalletRecord(wallet) {
-  const dbClient = await pool.connect();
-
-  try {
-    await dbClient.query('BEGIN');
-
-    const email = `shelley-${randomUUID()}@tokenix.local`;
-    const passwordHash = 'temporary-test-password-hash';
-    const publicKey = wallet.signingKey?.publicKey || null;
-
-    const userResult = await dbClient.query(
-      'INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING user_id AS "userId"',
-      [email, passwordHash]
-    );
-
-    const userId = userResult.rows[0].userId;
-
-    await dbClient.query(
-      'INSERT INTO wallets (user_id, wallet_address, public_key) VALUES ($1, $2, $3)',
-      [userId, wallet.address, publicKey]
-    );
-
-    await dbClient.query('COMMIT');
-
-    return { userId, email };
-  } catch (error) {
-    await dbClient.query('ROLLBACK');
-    throw error;
-  } finally {
-    dbClient.release();
-  }
-}
-
-async function impersonateAccount(provider, address) {
-  await provider.send('hardhat_impersonateAccount', [address]);
-}
-
-async function waitForTransactionStatus(txId, expectedStatus = 'CONFIRMED', maxAttempts = 30, delayMs = 1000) {
+async function waitForTransactionStatus(token, txHash, expectedStatus = "CONFIRMED", maxAttempts = 30, delayMs = 1000) {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const { rows } = await pool.query(
-      `
-        SELECT status,
-               confirmed_at AS "confirmedAt",
-               tx_hash AS "txHash"
-        FROM transactions
-        WHERE tx_id = $1
-        LIMIT 1
-      `,
-      [txId]
+    const transactions = await request("/transactions?type=USER_TRANSFER", {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const transaction = transactions.find(
+      (item) => item.txHash?.toLowerCase() === txHash.toLowerCase()
     );
 
-    const row = rows[0];
-    if (row?.status === expectedStatus) {
-      return row;
+    if (transaction?.status === expectedStatus) {
+      return transaction;
     }
 
-    if (attempt === maxAttempts - 1) {
-      throw new Error(`Transaction ${txId} did not reach ${expectedStatus} status`);
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    await sleep(delayMs);
   }
+
+  throw new Error(`Transaction ${txHash} did not reach ${expectedStatus} status.`);
 }
 
 async function main() {
-  try {
-    if (!fs.existsSync(ABI_FILE)) {
-      throw new Error(`ABI file not found at ${ABI_FILE}. Run full-deploy first.`);
-    }
+  const provider = new ethers.JsonRpcProvider(RPC_URL);
+  await waitForRpcReady(provider);
 
-    // Dynamic import after setting env var so BlockchainClient picks up RPC_URL.
-    const { default: BlockchainClient } = await import('../src/services/BlockchainClient.js');
+  const email = `transaction-flow-${randomUUID()}@tokenix.local`;
+  const password = "Passw0rd!";
+  const senderWallet = ethers.Wallet.createRandom();
+  const recipientWallet = ethers.Wallet.createRandom();
+  const senderAddress = ethers.getAddress(senderWallet.address);
+  const recipientAddress = ethers.getAddress(recipientWallet.address);
+  const contract = new ethers.Contract(
+    tokenArtifact.address,
+    tokenArtifact.abi,
+    senderWallet.connect(provider)
+  );
 
-    const client = new BlockchainClient();
-    if (!client.isConfigured()) {
-      throw new Error('BlockchainClient is not configured. Ensure ABI and contract address are present.');
-    }
+  console.log("Registering user:", email);
+  const registered = await request("/auth/register", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ email, password }),
+  });
 
-    const provider = client.provider;
-    await waitForRpcReady(provider);
-    await waitForContractReady(provider, client.contractAddress);
+  const token = registered.token;
+  if (!token) {
+    throw new Error("Registration did not return an auth token.");
+  }
 
-    const senderWallet = ethers.Wallet.createRandom();
-    const recipientWallet = ethers.Wallet.createRandom();
-    const senderAddress = senderWallet.address;
-    const recipientAddress = recipientWallet.address;
-    const transferAmount = '10';
+  console.log("Creating wallet:", senderAddress);
+  await request("/wallet/create", {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify({
+      walletAddress: senderAddress,
+      publicKey: senderWallet.signingKey.publicKey,
+    }),
+  });
 
-    const originalTransfer = BlockchainClient.prototype.transfer;
-    BlockchainClient.prototype.transfer = async function patchedTransfer({ fromAddress, toAddress, amount }) {
-      if (fromAddress && fromAddress.toLowerCase() === senderAddress.toLowerCase()) {
-        const signer = senderWallet.connect(this.provider);
-        const contractWithSigner = this.contract.connect(signer);
-        const value = ethers.parseUnits(String(amount), 18);
-        const txResponse = await contractWithSigner.transfer(toAddress, value);
-        return txResponse.hash;
-      }
+  const fundedBalance = await waitForWalletBalance(token, 100);
+  console.log("Wallet balance after provisioning:", fundedBalance.balance);
 
-      return originalTransfer.call(this, { fromAddress, toAddress, amount });
-    };
+  const recipientBalanceBefore = await contract.balanceOf(recipientAddress);
+  const transferValue = ethers.parseUnits(TRANSFER_AMOUNT, 18);
 
-    const { buildSignedTransferMessage, processTransferE2E } = await import('../src/services/transactionService.js');
+  console.log("Broadcasting frontend-signed transfer...");
+  const txResponse = await contract.transfer(recipientAddress, transferValue);
+  console.log("Broadcast tx hash:", txResponse.hash);
 
-    const { userId } = await createTemporaryWalletRecord(senderWallet);
-
-    console.log('Using sender wallet address:', senderAddress);
-    console.log('Using recipient address:', recipientAddress);
-    console.log('Temporary user id:', userId);
-
-    const ethBefore = await provider.getBalance(senderAddress);
-    const senderBalanceBeforeFunding = await client.contract.balanceOf(senderAddress);
-    const recipientBalanceBefore = await client.contract.balanceOf(recipientAddress);
-
-    const fundTxHash = await client.fundAccount(senderAddress);
-    if (!fundTxHash || typeof fundTxHash !== 'string') {
-      throw new Error('fundAccount did not return a transaction hash');
-    }
-
-    const fundReceipt = await client.waitForTransaction(fundTxHash);
-    if (!fundReceipt || (fundReceipt.status !== 1n && fundReceipt.status !== 1)) {
-      throw new Error('Funding transaction failed');
-    }
-
-    const ethAfter = await provider.getBalance(senderAddress);
-    const senderBalanceAfterFunding = await client.contract.balanceOf(senderAddress);
-
-    if (ethAfter - ethBefore !== ethers.parseEther('0.005')) {
-      throw new Error(`ETH funding amount incorrect for ${senderAddress}`);
-    }
-
-    if (senderBalanceAfterFunding - senderBalanceBeforeFunding !== ethers.parseUnits('100', 18)) {
-      throw new Error(`TNX provisioning amount incorrect for ${senderAddress}`);
-    }
-
-    await impersonateAccount(provider, senderAddress);
-
-    const transferMessage = {
+  const recorded = await request("/transactions/transfer", {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify({
+      txHash: txResponse.hash,
       fromAddress: senderAddress,
       toAddress: recipientAddress,
-      amount: transferAmount,
-      timestamp: new Date().toISOString(),
-    };
-    const signature = await senderWallet.signMessage(buildSignedTransferMessage(transferMessage));
+      amount: TRANSFER_AMOUNT,
+    }),
+  });
 
-    console.log('Transfer message:', transferMessage);
-    console.log('Submitting transfer through transactionService.processTransferE2E...');
-
-    const transferResult = await processTransferE2E({
-      userId,
-      toAddress: recipientAddress,
-      amount: transferAmount,
-      message: transferMessage,
-      signature,
-    });
-
-    if (transferResult.status !== 'PENDING') {
-      throw new Error(`Expected PENDING status from processTransferE2E, got ${transferResult.status}`);
-    }
-
-    if (!transferResult.txHash) {
-      throw new Error('processTransferE2E did not return a txHash');
-    }
-
-    const transferReceipt = await client.waitForTransaction(transferResult.txHash);
-    if (!transferReceipt || (transferReceipt.status !== 1n && transferReceipt.status !== 1)) {
-      throw new Error('Transfer transaction failed on-chain');
-    }
-
-    const confirmedTransaction = await waitForTransactionStatus(transferResult.txId, 'CONFIRMED');
-    if (confirmedTransaction.status !== 'CONFIRMED') {
-      throw new Error(`Transaction ${transferResult.txId} did not reach CONFIRMED status`);
-    }
-
-    const recipientBalanceAfter = await client.contract.balanceOf(recipientAddress);
-    if (recipientBalanceAfter - recipientBalanceBefore !== ethers.parseUnits('10', 18)) {
-      throw new Error('Recipient balance did not increase by exactly 10 TNX');
-    }
-
-    const senderBalanceAfterTransfer = await client.contract.balanceOf(senderAddress);
-    if (senderBalanceAfterFunding - senderBalanceAfterTransfer !== ethers.parseUnits('10', 18)) {
-      throw new Error('Sender balance did not decrease by exactly 10 TNX');
-    }
-
-    console.log('Transfer tx hash:', transferResult.txHash);
-    console.log('Transfer confirmed at:', confirmedTransaction.confirmedAt);
-    console.log('Recipient balance before:', ethers.formatUnits(recipientBalanceBefore, 18));
-    console.log('Recipient balance after:', ethers.formatUnits(recipientBalanceAfter, 18));
-    console.log('All checks passed.');
-    process.exit(0);
-  } catch (err) {
-    console.error('Test failed:', err);
-    process.exit(1);
+  if (recorded.status !== "PENDING") {
+    throw new Error(`Expected backend to initially record PENDING, got ${recorded.status}`);
   }
+
+  const confirmed = await waitForTransactionStatus(token, txResponse.hash, "CONFIRMED");
+  const receipt = await provider.getTransactionReceipt(txResponse.hash);
+  const recipientBalanceAfter = await contract.balanceOf(recipientAddress);
+
+  if (!receipt || Number(receipt.status) !== 1) {
+    throw new Error("On-chain transaction receipt is not successful.");
+  }
+
+  if (recipientBalanceAfter - recipientBalanceBefore !== transferValue) {
+    throw new Error("Recipient balance did not increase by the transfer amount.");
+  }
+
+  await expectHttpError(
+    "/transactions/transfer",
+    {
+      method: "POST",
+      headers: authHeaders(token),
+      body: JSON.stringify({
+        txHash: txResponse.hash,
+        fromAddress: senderAddress,
+        toAddress: recipientAddress,
+        amount: TRANSFER_AMOUNT,
+      }),
+    },
+    409
+  );
+
+  console.log("Backend tx id:", confirmed.txId);
+  console.log("Backend status:", confirmed.status);
+  console.log("Confirmed at:", confirmed.confirmedAt);
+  console.log("Recipient balance before:", ethers.formatUnits(recipientBalanceBefore, 18));
+  console.log("Recipient balance after:", ethers.formatUnits(recipientBalanceAfter, 18));
+  console.log("All HTTP transaction-flow checks passed.");
 }
 
-main();
+main().catch((error) => {
+  console.error("HTTP transaction-flow test failed:", error);
+  process.exit(1);
+});

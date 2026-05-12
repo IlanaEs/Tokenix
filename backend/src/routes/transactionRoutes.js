@@ -2,7 +2,7 @@ import express from "express";
 import { requireAuth } from "../middleware/requireAuth.js";
 import {
   getTransactionsByUserId,
-  processTransferE2E,
+  recordSubmittedTransfer,
 } from "../services/transactionService.js";
 
 export const transactionRoutes = express.Router();
@@ -29,24 +29,24 @@ transactionRoutes.get("/", requireAuth, async (req, res) => {
 transactionRoutes.post("/transfer", requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
-    const { toAddress, amount, message, signature } = req.body || {};
+    const { txHash, fromAddress, toAddress, amount } = req.body || {};
 
     if (
+      txHash === undefined ||
+      txHash === null ||
+      fromAddress === undefined ||
+      fromAddress === null ||
       toAddress === undefined ||
       toAddress === null ||
       amount === undefined ||
-      amount === null ||
-      message === undefined ||
-      message === null ||
-      signature === undefined ||
-      signature === null
+      amount === null
     ) {
       return res.status(400).json({
-        error: "toAddress, amount, message, and signature are required",
+        error: "txHash, fromAddress, toAddress, and amount are required",
       });
     }
 
-    const tx = await processTransferE2E({ userId, toAddress, amount, message, signature });
+    const tx = await recordSubmittedTransfer({ userId, txHash, fromAddress, toAddress, amount });
     return res.status(201).json(tx);
   } catch (err) {
     return res.status(err.status || err.statusCode || 500).json({ error: err.message });

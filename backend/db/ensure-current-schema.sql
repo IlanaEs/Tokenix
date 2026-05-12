@@ -66,3 +66,7 @@ DROP CONSTRAINT IF EXISTS transactions_type_check;
 ALTER TABLE transactions
 ADD CONSTRAINT transactions_type_check
 CHECK (type IN ('SYSTEM_FUNDING', 'USER_TRANSFER'));
+
+CREATE UNIQUE INDEX IF NOT EXISTS transactions_tx_hash_unique
+ON transactions (tx_hash)
+WHERE tx_hash IS NOT NULL;
