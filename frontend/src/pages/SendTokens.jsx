@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import { ethers } from "ethers";
 import { apiFetch, getErrorMessage, transferTokens } from "../lib/api";
 import { getWalletPrivateKey } from "../lib/walletKey";
+import tokenArtifact from "../abi/MyToken.json";
+
+const RPC_URL = import.meta.env.VITE_RPC_URL ?? "http://localhost:8545";
 
 function validateRecipient(value) {
   if (!value) {
@@ -34,6 +37,15 @@ function validateAmount(value) {
 
 async function fetchBalance() {
   return apiFetch("/wallet/balance");
+}
+
+async function broadcastTokenTransfer({ privateKey, toAddress, amount }) {
+  const provider = new ethers.JsonRpcProvider(RPC_URL);
+  const signingWallet = new ethers.Wallet(privateKey, provider);
+  const contract = new ethers.Contract(tokenArtifact.address, tokenArtifact.abi, signingWallet);
+  const value = ethers.parseUnits(String(amount), 18);
+  const tx = await contract.transfer(toAddress, value);
+  return tx.hash;
 }
 
 function shortHash(value) {
@@ -139,22 +151,19 @@ export default function SendTokens({ onBack, onShowHistory }) {
         );
       }
 
-      const timestamp = new Date().toISOString();
-      const message = {
-        fromAddress,
+      const txHash = await broadcastTokenTransfer({
+        privateKey,
         toAddress,
         amount: trimmedAmount,
-        timestamp,
-      };
-      const signature = await signingWallet.signMessage(JSON.stringify(message));
+      });
 
       setTransferState("submitting");
 
       const tx = await transferTokens({
+        txHash,
+        fromAddress,
         toAddress,
         amount: trimmedAmount,
-        message,
-        signature,
       });
 
       setSubmittedTx(tx);

@@ -250,17 +250,141 @@ function finalizeTransactionInBackground(txId, txHash) {
   })();
 }
 
-async function ensureSufficientTokenBalance(fromAddress, amount) {
-  blockchainClient.ensureConfigured();
-
-  const currentBalance = ethers.parseUnits(await blockchainClient.getBalance(fromAddress), 18);
-  const requestedAmount = ethers.parseUnits(String(amount), 18);
-
-  if (currentBalance < requestedAmount) {
-    const error = new Error('Insufficient TNX balance');
-    error.status = 400;
-    throw error;
+function normalizeSubmittedTransferInput({ txHash, fromAddress, toAddress, amount }) {
+  if (!txHash || !fromAddress || !toAddress || amount === undefined || amount === null) {
+    throw createHttpError("txHash, fromAddress, toAddress, and amount are required", 400);
   }
+
+  const normalizedTxHash = String(txHash).trim();
+  if (!ethers.isHexString(normalizedTxHash, 32)) {
+    throw createHttpError("Invalid txHash", 400);
+  }
+
+  if (!ethers.isAddress(fromAddress)) {
+    throw createHttpError("Invalid fromAddress", 400);
+  }
+
+  const normalizedTransfer = normalizeTransferInput({ toAddress, amount });
+
+  return {
+    txHash: normalizedTxHash,
+    fromAddress: ethers.getAddress(String(fromAddress).trim()),
+    toAddress: ethers.getAddress(normalizedTransfer.toAddress),
+    amount: normalizedTransfer.amount,
+  };
+}
+
+async function ensureUniqueTxHash(txHash) {
+  const { rows } = await pool.query(
+    `
+    SELECT tx_id AS "txId"
+    FROM transactions
+    WHERE LOWER(tx_hash) = LOWER($1)
+    LIMIT 1
+    `,
+    [txHash]
+  );
+
+  if (rows[0]) {
+    throw createHttpError("Transaction hash already recorded", 409);
+  }
+}
+
+function getContractAddress() {
+  blockchainClient.ensureConfigured();
+  return ethers.getAddress(blockchainClient.contractAddress);
+}
+
+function decodeTokenTransferData(data) {
+  try {
+    const parsed = blockchainClient.contract.interface.parseTransaction({ data });
+    if (parsed?.name !== "transfer") {
+      throw createHttpError("Transaction is not an ERC-20 transfer", 400);
+    }
+
+    return {
+      toAddress: ethers.getAddress(parsed.args[0]),
+      amount: parsed.args[1],
+    };
+  } catch (error) {
+    if (error?.status || error?.statusCode) {
+      throw error;
+    }
+
+    throw createHttpError("Transaction data is not a supported token transfer", 400);
+  }
+}
+
+function validateTransferReceiptLog({ receipt, expected }) {
+  if (!receipt) {
+    return;
+  }
+
+  const contractAddress = getContractAddress();
+  const transferTopic = ethers.id("Transfer(address,address,uint256)");
+
+  const matchingLog = receipt.logs.find((log) => {
+    if (ethers.getAddress(log.address) !== contractAddress) {
+      return false;
+    }
+
+    if (log.topics[0] !== transferTopic) {
+      return false;
+    }
+
+    try {
+      const parsed = blockchainClient.contract.interface.parseLog(log);
+      return (
+        parsed?.name === "Transfer" &&
+        ethers.getAddress(parsed.args.from) === expected.fromAddress &&
+        ethers.getAddress(parsed.args.to) === expected.toAddress &&
+        parsed.args.value === ethers.parseUnits(expected.amount, 18)
+      );
+    } catch {
+      return false;
+    }
+  });
+
+  if (Number(receipt.status) === 1 && !matchingLog) {
+    throw createHttpError("Transaction receipt does not contain the expected token transfer", 400);
+  }
+}
+
+export async function validateSubmittedTransfer({ txHash, fromAddress, toAddress, amount }) {
+  const expected = normalizeSubmittedTransferInput({ txHash, fromAddress, toAddress, amount });
+  const contractAddress = getContractAddress();
+  const transaction = await blockchainClient.getTransaction(expected.txHash);
+
+  if (!transaction) {
+    throw createHttpError("Transaction hash not found on-chain", 404);
+  }
+
+  if (!transaction.to || ethers.getAddress(transaction.to) !== contractAddress) {
+    throw createHttpError("Transaction does not target the configured token contract", 400);
+  }
+
+  if (!transaction.from || ethers.getAddress(transaction.from) !== expected.fromAddress) {
+    throw createHttpError("Transaction sender does not match fromAddress", 400);
+  }
+
+  const decodedTransfer = decodeTokenTransferData(transaction.data);
+  const expectedAmount = ethers.parseUnits(expected.amount, 18);
+
+  if (decodedTransfer.toAddress !== expected.toAddress) {
+    throw createHttpError("Transaction recipient does not match toAddress", 400);
+  }
+
+  if (decodedTransfer.amount !== expectedAmount) {
+    throw createHttpError("Transaction amount does not match amount", 400);
+  }
+
+  const receipt = await blockchainClient.getTransactionReceipt(expected.txHash);
+  validateTransferReceiptLog({ receipt, expected });
+
+  return {
+    ...expected,
+    receiptStatus: receipt ? (Number(receipt.status) === 1 ? "CONFIRMED" : "FAILED") : "PENDING",
+  };
 }
 
 export async function getTransactionsByUserId(userId, type = null) {
@@ -300,12 +424,15 @@ export async function createPendingTransaction({
   fromAddress,
   toAddress,
   amount,
+  txHash = null,
+  status = "PENDING",
+  confirmedAt = null,
 }) {
   const q = `
     INSERT INTO transactions
-      (user_id, type, from_address, to_address, amount, status)
+      (user_id, type, from_address, to_address, amount, tx_hash, status, confirmed_at)
     VALUES
-      ($1, $2, $3, $4, $5, 'PENDING')
+      ($1, $2, $3, $4, $5, $6, $7, $8)
     RETURNING tx_id AS "txId",
               type AS "type",
               from_address AS "fromAddress",
@@ -317,7 +444,16 @@ export async function createPendingTransaction({
               confirmed_at AS "confirmedAt"
   `;
 
-  const { rows } = await pool.query(q, [userId, type, fromAddress, toAddress, amount]);
+  const { rows } = await pool.query(q, [
+    userId,
+    type,
+    fromAddress,
+    toAddress,
+    amount,
+    txHash,
+    status,
+    confirmedAt,
+  ]);
   return rows[0];
 }
 
@@ -334,52 +470,31 @@ function formatTransferResponse(tx) {
   };
 }
 
-export async function processTransferE2E({ userId, toAddress, amount, message, signature }) {
-  const normalized = normalizeSignedTransferInput({ toAddress, amount, message, signature });
-  const fromAddress = await getUserWalletAddress(userId);
+export async function recordSubmittedTransfer({ userId, txHash, fromAddress, toAddress, amount }) {
+  const normalized = normalizeSubmittedTransferInput({ txHash, fromAddress, toAddress, amount });
+  const userWalletAddress = await getUserWalletAddress(userId);
 
-  verifySignature({
-    message: normalized.message,
-    signature: normalized.signature,
-    userWalletAddress: fromAddress,
-  });
+  if (ethers.getAddress(userWalletAddress) !== normalized.fromAddress) {
+    throw createHttpError(
+      "Transfer source wallet does not belong to authenticated user",
+      401
+    );
+  }
 
-  await ensureSufficientTokenBalance(fromAddress, normalized.amount);
+  await ensureUniqueTxHash(normalized.txHash);
+
+  const validated = await validateSubmittedTransfer(normalized);
 
   const tx = await createPendingTransaction({
     userId,
     type: TRANSACTION_TYPES.USER_TRANSFER,
-    fromAddress,
-    toAddress: normalized.toAddress,
-    amount: normalized.amount,
+    fromAddress: validated.fromAddress,
+    toAddress: validated.toAddress,
+    amount: validated.amount,
+    txHash: validated.txHash,
   });
 
-  let txHash;
+  finalizeTransactionInBackground(tx.txId, validated.txHash);
 
-  try {
-    txHash = await blockchainClient.transfer({
-      fromAddress,
-      toAddress: normalized.toAddress,
-      amount: normalized.amount,
-    });
-  } catch (error) {
-    await markTransactionFailed(tx.txId, error?.txHash || null);
-    throw error;
-  }
-
-  await pool.query(
-    `
-    UPDATE transactions
-    SET tx_hash = $1
-    WHERE tx_id = $2
-    `,
-    [txHash, tx.txId]
-  );
-
-  finalizeTransactionInBackground(tx.txId, txHash);
-
-  return formatTransferResponse({
-    ...tx,
-    txHash,
-  });
+  return formatTransferResponse(tx);
 }

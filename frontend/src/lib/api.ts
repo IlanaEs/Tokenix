@@ -35,18 +35,11 @@ export type TransactionListItem = {
   confirmedAt: string | null;
 };
 
-export type SignedTransferMessage = {
+export type SubmittedTransferRequest = {
+  txHash: string;
   fromAddress: string;
   toAddress: string;
   amount: string;
-  timestamp: string;
-};
-
-export type SignedTransferRequest = {
-  toAddress: string;
-  amount: string;
-  message: SignedTransferMessage;
-  signature: string;
 };
 
 export type TransferResponse = {
@@ -210,7 +203,7 @@ export async function apiFetch<T>(
 }
 
 export async function transferTokens(
-  request: SignedTransferRequest
+  request: SubmittedTransferRequest
 ): Promise<TransferResponse> {
   return apiFetch<TransferResponse>("/transactions/transfer", {
     method: "POST",

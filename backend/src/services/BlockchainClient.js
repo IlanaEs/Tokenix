@@ -152,24 +152,14 @@ export default class BlockchainClient {
     }
   }
 
-  
-  async transfer({ fromAddress, toAddress, amount }) {
+  async getTransaction(txHash) {
     this.ensureConfigured();
-    try {
-      const signer = await this.provider.getSigner(fromAddress);
-      const contractWithSigner = this.contract.connect(signer);
-      const value = ethers.parseUnits(String(amount), 18);
+    return this.provider.getTransaction(txHash);
+  }
 
-      const txResponse = await contractWithSigner.transfer(toAddress, value);
-
-      return txResponse.hash;
-    } catch (err) {
-      console.error('❌ Blockchain Transfer Error:', err.message);
-      const error = new Error(err.message || 'Transfer failed');
-      error.status = err.status || 502;
-      error.txHash = err?.txHash || null;
-      throw error;
-    }
+  async getTransactionReceipt(txHash) {
+    this.ensureConfigured();
+    return this.provider.getTransactionReceipt(txHash);
   }
 
   // expose admin signer for tests and internal use
