@@ -52,6 +52,7 @@ services:
       - ./backend/src/abi:/backend/src/abi
       - ./frontend/src/abi:/frontend/src/abi
       - ./blockchain/entrypoint.sh:/app/entrypoint.sh:ro
+      - ./blockchain/scripts:/app/scripts:ro
     healthcheck:
       test: ["CMD", "node", "/app/scripts/healthcheck.cjs"]
       interval: 2s
