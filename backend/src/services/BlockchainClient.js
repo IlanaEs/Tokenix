@@ -155,24 +155,25 @@ export default class BlockchainClient {
   
   async transfer({ fromAddress, toAddress, amount }) {
     this.ensureConfigured();
+    const normalizedFrom = fromAddress.toLowerCase();
     try {
       // Impersonate account in Hardhat to allow transfer without private key
-      await this.provider.send('hardhat_impersonateAccount', [fromAddress]);
+      await this.provider.send('hardhat_impersonateAccount', [normalizedFrom]);
 
-      const signer = await this.provider.getSigner(fromAddress);
+      const signer = new ethers.JsonRpcSigner(this.provider, normalizedFrom);
       const contractWithSigner = this.contract.connect(signer);
       const value = ethers.parseUnits(String(amount), 18);
 
       const txResponse = await contractWithSigner.transfer(toAddress, value);
 
       // Stop impersonating after transaction is sent
-      await this.provider.send('hardhat_stopImpersonatingAccount', [fromAddress]);
+      await this.provider.send('hardhat_stopImpersonatingAccount', [normalizedFrom]);
 
       return txResponse.hash;
     } catch (err) {
       // Ensure we stop impersonating even if transfer fails
       try {
-        await this.provider.send('hardhat_stopImpersonatingAccount', [fromAddress]);
+        await this.provider.send('hardhat_stopImpersonatingAccount', [normalizedFrom]);
       } catch (stopErr) {
         // Ignore errors during stop impersonation
       }

@@ -132,19 +132,6 @@ async function main() {
     const recipientAddress = recipientWallet.address;
     const transferAmount = '10';
 
-    const originalTransfer = BlockchainClient.prototype.transfer;
-    BlockchainClient.prototype.transfer = async function patchedTransfer({ fromAddress, toAddress, amount }) {
-      if (fromAddress && fromAddress.toLowerCase() === senderAddress.toLowerCase()) {
-        const signer = senderWallet.connect(this.provider);
-        const contractWithSigner = this.contract.connect(signer);
-        const value = ethers.parseUnits(String(amount), 18);
-        const txResponse = await contractWithSigner.transfer(toAddress, value);
-        return txResponse.hash;
-      }
-
-      return originalTransfer.call(this, { fromAddress, toAddress, amount });
-    };
-
     const { buildSignedTransferMessage, processTransferE2E } = await import('../src/services/transactionService.js');
 
     const { userId } = await createTemporaryWalletRecord(senderWallet);
@@ -177,8 +164,6 @@ async function main() {
     if (senderBalanceAfterFunding - senderBalanceBeforeFunding !== ethers.parseUnits('100', 18)) {
       throw new Error(`TNX provisioning amount incorrect for ${senderAddress}`);
     }
-
-    await impersonateAccount(provider, senderAddress);
 
     const transferMessage = {
       fromAddress: senderAddress,
