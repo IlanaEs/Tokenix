@@ -22,6 +22,7 @@ const SUMMARY_ITEMS = [
 ];
 
 const ROLE_OPTIONS = ["USER", "ADMIN"];
+const TRANSACTION_STATUS_OPTIONS = ["ALL", "PENDING", "CONFIRMED", "FAILED"];
 
 function getDisplayValue(value, fallback = "-") {
   if (value === null || value === undefined || value === "") {
@@ -72,6 +73,9 @@ export default function Admin({ onBack, onUnauthenticated }) {
   const [summary, setSummary] = useState(null);
   const [users, setUsers] = useState([]);
   const [transactions, setTransactions] = useState([]);
+  const [transactionStatusFilter, setTransactionStatusFilter] = useState("ALL");
+  const [transactionSearch, setTransactionSearch] = useState("");
+  const [copyFeedback, setCopyFeedback] = useState("");
   const [viewState, setViewState] = useState("loading");
   const [error, setError] = useState("");
   const [actionUserId, setActionUserId] = useState(null);
@@ -81,6 +85,7 @@ export default function Admin({ onBack, onUnauthenticated }) {
     setViewState("loading");
     setError("");
     setActionError("");
+    setCopyFeedback("");
 
     try {
       const [nextSummary, nextUsers, nextTransactions] = await Promise.all([
@@ -196,10 +201,47 @@ export default function Admin({ onBack, onUnauthenticated }) {
     }
   }
 
+  async function handleCopyTxHash(txHash) {
+    if (!txHash) {
+      return;
+    }
+
+    if (!navigator.clipboard?.writeText) {
+      setCopyFeedback("Clipboard is not available in this browser.");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(txHash);
+      setCopyFeedback("Copied txHash.");
+    } catch {
+      setCopyFeedback("Unable to copy txHash.");
+    }
+  }
+
   const isLoading = viewState === "loading";
   const isLoaded = viewState === "loaded";
   const isForbidden = viewState === "forbidden";
   const isError = viewState === "error";
+  const normalizedTransactionSearch = transactionSearch.trim().toLowerCase();
+  const filteredTransactions = transactions.filter((transaction) => {
+    if (
+      transactionStatusFilter !== "ALL" &&
+      transaction.status !== transactionStatusFilter
+    ) {
+      return false;
+    }
+
+    if (!normalizedTransactionSearch) {
+      return true;
+    }
+
+    return [transaction.fromAddress, transaction.toAddress, transaction.txHash]
+      .filter(Boolean)
+      .some((value) =>
+        String(value).toLowerCase().includes(normalizedTransactionSearch)
+      );
+  });
 
   return (
     <div className="adminScreen screen">
@@ -361,60 +403,118 @@ export default function Admin({ onBack, onUnauthenticated }) {
           <section className="card adminSection">
             <div className="adminSectionHeader">
               <div className="cardTitle">Transactions</div>
-              <span className="helperText">{transactions.length} total</span>
+              <span className="helperText">
+                {filteredTransactions.length} shown of {transactions.length} total
+              </span>
             </div>
 
             {transactions.length ? (
-              <div className="adminTableWrap">
-                <table className="adminTable">
-                  <thead>
-                    <tr>
-                      <th>Tx ID</th>
-                      <th>Hash</th>
-                      <th>From</th>
-                      <th>To</th>
-                      <th>Amount</th>
-                      <th>Status</th>
-                      <th>Created</th>
-                      <th>Confirmed</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {transactions.map((transaction, index) => (
-                      <tr key={transaction.txId || transaction.txHash || index}>
-                        <td className="mono">{getDisplayValue(transaction.txId)}</td>
-                        <td className="mono">
-                          {transaction.txHash ? (
-                            <span title={transaction.txHash}>
-                              {shortHash(transaction.txHash)}
-                            </span>
-                          ) : (
-                            "-"
-                          )}
-                        </td>
-                        <td className="mono">
-                          <span title={transaction.fromAddress}>
-                            {shortHash(transaction.fromAddress) || "-"}
-                          </span>
-                        </td>
-                        <td className="mono">
-                          <span title={transaction.toAddress}>
-                            {shortHash(transaction.toAddress) || "-"}
-                          </span>
-                        </td>
-                        <td>{getDisplayValue(transaction.amount)}</td>
-                        <td>
-                          <span className={getStatusBadgeClass(transaction.status)}>
-                            {getDisplayValue(transaction.status)}
-                          </span>
-                        </td>
-                        <td>{getDisplayValue(transaction.createdAt)}</td>
-                        <td>{getDisplayValue(transaction.confirmedAt)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <>
+                <div className="adminFilters">
+                  <label className="fieldLabel">
+                    Status
+                    <select
+                      className="adminSelect"
+                      value={transactionStatusFilter}
+                      onChange={(event) =>
+                        setTransactionStatusFilter(event.target.value)
+                      }
+                    >
+                      {TRANSACTION_STATUS_OPTIONS.map((status) => (
+                        <option key={status} value={status}>
+                          {status === "ALL" ? "All" : status}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="fieldLabel adminSearchField">
+                    Search address or txHash
+                    <input
+                      className="input mono"
+                      type="search"
+                      value={transactionSearch}
+                      onChange={(event) => setTransactionSearch(event.target.value)}
+                      placeholder="0x..."
+                    />
+                  </label>
+                </div>
+
+                {copyFeedback ? (
+                  <p className="helperText adminCopyFeedback">{copyFeedback}</p>
+                ) : null}
+
+                {filteredTransactions.length ? (
+                  <div className="adminTableWrap">
+                    <table className="adminTable">
+                      <thead>
+                        <tr>
+                          <th>Tx ID</th>
+                          <th>Hash</th>
+                          <th>From</th>
+                          <th>To</th>
+                          <th>Amount</th>
+                          <th>Status</th>
+                          <th>Created</th>
+                          <th>Confirmed</th>
+                          <th>Copy</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredTransactions.map((transaction, index) => (
+                          <tr key={transaction.txId || transaction.txHash || index}>
+                            <td className="mono">{getDisplayValue(transaction.txId)}</td>
+                            <td className="mono">
+                              {transaction.txHash ? (
+                                <span title={transaction.txHash}>
+                                  {shortHash(transaction.txHash)}
+                                </span>
+                              ) : (
+                                "-"
+                              )}
+                            </td>
+                            <td className="mono">
+                              <span title={transaction.fromAddress}>
+                                {shortHash(transaction.fromAddress) || "-"}
+                              </span>
+                            </td>
+                            <td className="mono">
+                              <span title={transaction.toAddress}>
+                                {shortHash(transaction.toAddress) || "-"}
+                              </span>
+                            </td>
+                            <td>{getDisplayValue(transaction.amount)}</td>
+                            <td>
+                              <span className={getStatusBadgeClass(transaction.status)}>
+                                {getDisplayValue(transaction.status)}
+                              </span>
+                            </td>
+                            <td>{getDisplayValue(transaction.createdAt)}</td>
+                            <td>{getDisplayValue(transaction.confirmedAt)}</td>
+                            <td>
+                              {transaction.txHash ? (
+                                <button
+                                  type="button"
+                                  className="btn adminTableButton"
+                                  onClick={() => void handleCopyTxHash(transaction.txHash)}
+                                >
+                                  Copy
+                                </button>
+                              ) : (
+                                <span className="helperText">No hash</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="emptyState">
+                    No transactions match the current filters.
+                  </div>
+                )}
+              </>
             ) : (
               <div className="emptyState">
                 No transactions were returned by the Admin API.

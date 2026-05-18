@@ -328,6 +328,21 @@ body{
   gap: 14px;
 }
 
+.adminFilters{
+  display:flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.adminSearchField{
+  flex: 1 1 280px;
+}
+
+.adminCopyFeedback{
+  margin: 0;
+}
+
 .adminSummaryGrid{
   display:grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
