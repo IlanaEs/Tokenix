@@ -72,6 +72,21 @@ async function waitForRpcReady(provider, maxAttempts = 30, delayMs = 1000) {
   }
 }
 
+async function waitForContractReady(provider, contractAddress, maxAttempts = 60, delayMs = 1000) {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const code = await provider.getCode(contractAddress);
+    if (code && code !== "0x") {
+      return;
+    }
+
+    if (attempt === maxAttempts - 1) {
+      throw new Error(`Contract code not found at ${contractAddress} after waiting.`);
+    }
+
+    await sleep(delayMs);
+  }
+}
+
 async function waitForWalletBalance(token, expectedMinimum, maxAttempts = 30, delayMs = 1000) {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const balance = await request("/wallet/balance", {
@@ -115,6 +130,7 @@ async function waitForTransactionStatus(token, txHash, expectedStatus = "CONFIRM
 async function main() {
   const provider = new ethers.JsonRpcProvider(RPC_URL);
   await waitForRpcReady(provider);
+  await waitForContractReady(provider, tokenArtifact.address);
 
   const email = `transaction-flow-${randomUUID()}@tokenix.local`;
   const password = "Passw0rd!";
