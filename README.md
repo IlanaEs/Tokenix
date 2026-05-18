@@ -1,121 +1,60 @@
-# Tokenix – Secure Digital Wallet for Blockchain Tokens
+# Tokenix
 
-Tokenix is a full-stack project for user authentication, wallet creation, balance display, and backend-orchestrated token transfers on a local ERC-20 smart contract.
-The repository combines a React frontend, an Express backend, PostgreSQL, and a Hardhat blockchain environment.
+Tokenix is a full-stack secure digital wallet MVP for authenticated users, locally generated wallets, ERC-20 token balances, frontend-signed transfers, transaction lifecycle tracking, and administrative monitoring.
+
+The system is built with a React frontend, an Express backend, PostgreSQL, Docker Compose, and a local Hardhat blockchain runtime.
 
 ![Tokenix architecture overview](docs/assets/tokenix_dark_clean.svg)
 
-The current implementation is backend-centric:
+## Architecture Overview
 
-* The frontend handles authentication and wallet creation UX.
-* The backend is the central control layer for authentication, wallet persistence, transaction logging, and blockchain calls.
-* Transfers are currently submitted through the backend.
-* Client-side signing is not implemented yet.
+Tokenix separates wallet custody, application policy, persistence, and blockchain integration into distinct layers.
 
-Note:
-The current implementation uses a backend-driven transfer model.
-Client-side signing will be introduced in the next phase.
+| Layer | Responsibility |
+| --- | --- |
+| Frontend | Authentication UI, wallet creation, local signing, transfer submission, balance and transaction views |
+| Backend | JWT-protected API, authorization, transaction verification, database persistence, lifecycle management, admin APIs |
+| BlockchainClient | Technical integration layer for contract reads, funding, transaction wait/receipt handling, and local Hardhat support |
+| Database | PostgreSQL persistence for users, wallets, roles, frozen state, transactions, statuses, and timestamps |
+| Blockchain | Local Hardhat ERC-20 contract runtime for development and MVP verification |
 
----
+The production-oriented transaction model is frontend-signed:
 
-## Main Functional Requirements
+1. The frontend owns the signing step.
+2. User private keys are never sent to, stored by, or used by the backend.
+3. The backend verifies submitted transaction data and user ownership.
+4. The backend persists transaction records and manages lifecycle state.
+5. The blockchain integration layer confirms on-chain execution and receipt status.
 
-Current functionality:
+`BlockchainClient` is intentionally a technical adapter. It is not the business owner of transaction policy and it must not become a backend custody layer. Local Hardhat-only impersonation or funding helpers may exist for development and testing infrastructure, but they do not replace the frontend-signed user transaction flow.
 
-* Register and log in with email/password.
-* Create a wallet from the frontend and persist its public address/public key in the backend.
-* Display wallet token balance.
-* Submit token transfers through the backend API.
-* Record transaction states in the backend database (`PENDING`, `CONFIRMED`, `FAILED`).
-* Expose transaction history via backend endpoints.
+## Current Feature Coverage
 
----
+The MVP currently supports:
 
-## Non-Functional Requirements
-
-Current development setup:
-
-* Use Docker Compose to run PostgreSQL, backend, frontend, and Hardhat locally.
-* Store password hashes in PostgreSQL.
-* Keep blockchain contract ABI/address synced into backend and frontend source folders.
-* Track transfer lifecycle in the database and confirm blockchain transactions asynchronously.
-
----
-
-## Technology Mapping
-
-| Layer          | Technologies                                                    |
-| -------------- | --------------------------------------------------------------- |
-| Frontend       | React (Vite), login/register, wallet creation, balance display  |
-| Backend        | Node.js / Express (API, auth, wallet, transfer, history)        |
-| Smart Contract | Solidity (OpenZeppelin ERC-20), Hardhat, Ignition               |
-| Database       | PostgreSQL                                                      |
-| DevOps         | Docker, Docker Compose, GitHub Actions (CI/CD)                  |
-
----
-
-## Security and Threat Modeling
-
-The project includes a STRIDE threat analysis covering:
-
-* Spoofing
-* Tampering
-* Repudiation
-* Information Disclosure
-* Denial of Service
-* Elevation of Privilege
-
-Current mitigations in this repository include authentication, password hashing, audit-oriented transaction logging, and separation between frontend, backend, and blockchain layers.
-
-Important current-state note:
-
-* There is no client-side signing flow yet.
-* The backend currently submits transfers to the blockchain.
-* The backend stores wallet public data only (`walletAddress`, `publicKey`) and does not persist a user private key.
-
----
+- Email/password authentication
+- JWT-protected backend APIs
+- Wallet creation using `walletAddress` and public key data
+- Blockchain-backed wallet balance lookup
+- Frontend-signed transfers
+- Transaction persistence and history retrieval
+- Transaction lifecycle statuses: `PENDING`, `CONFIRMED`, `FAILED`
+- Admin dashboard backend APIs
+- `USER` / `ADMIN` role management
+- User freeze/unfreeze administration
+- Health checks for the API and configured contract
 
 ## Repository Structure
 
-```
-├── backend         # Node.js / Express API server
-│   ├── Dockerfile
-│   ├── package.json
-│   └── src
-│       └── index.js
-├── frontend        # React application (Vite)
-│   ├── Dockerfile
-│   ├── index.html
-│   ├── package.json
-│   ├── vite.config.js
-│   └── src
-│       ├── App.jsx
-│       └── main.jsx
-├── blockchain        # Hardhat project for smart contracts
-│   ├── contracts
-│   │   └── Token.sol
-│   ├── ignition
-│   │   └── modules
-│   │       └── Token.cjs
-│   ├── test
-│   │   └── Token.js
-│   ├── hardhat.config.cjs
-│   └── package.json
-├── docker-compose.yml  # Service orchestration
+```text
+├── backend              # Express API, auth, wallet, transactions, admin, DB access
+├── frontend             # React/Vite client application
+├── blockchain           # Hardhat ERC-20 contract, deployment, ABI sync
+├── docs/assets          # README diagrams and documentation assets
+└── docker-compose.yml   # Local runtime orchestration
 ```
 
----
-
-## Getting Started
-
-### Prerequisites
-
-* Docker and Docker Compose installed
-* Node.js (for running services without Docker)
-
----
-
-## Running the Full Stack (Recommended)
+## Running the Full Stack
 
 From the repository root:
 
@@ -123,37 +62,165 @@ From the repository root:
 docker compose up --build
 ```
 
-Once running:
+Default local URLs:
 
-* Backend API: [http://localhost:3000](http://localhost:3000)
+- Frontend: [http://localhost:5173](http://localhost:5173)
+- Backend: [http://localhost:3000](http://localhost:3000)
+- Hardhat RPC: [http://localhost:8545](http://localhost:8545)
 
-  * Health check: [http://localhost:3000/health](http://localhost:3000/health)
-  * Contract health: [http://localhost:3000/health/contract](http://localhost:3000/health/contract)
-* Frontend: [http://localhost:5173](http://localhost:5173)
+Health endpoints:
 
-How this works:
+- `GET /health`
+- `GET /health/contract`
 
-* The `hardhat` container starts a local node.
-* Its entrypoint automatically runs `npm run full-deploy`.
-* `full-deploy` compiles the contract, deploys it locally, and syncs the ABI/address into both backend and frontend.
-* The backend reads the synced ABI/address from `backend/src/abi/MyToken.json`.
+The backend service depends on the Hardhat container health state. This prevents the backend from starting before the local blockchain RPC is ready.
 
-If you restart only the backend, it reuses the latest synced ABI file.
-If you recreate the Hardhat chain, a fresh contract is deployed and the ABI/address are synced again during container startup.
+## Blockchain Deployment and ABI Sync
 
-### Quick Test Flow
+For a fresh local blockchain startup, deploy and sync the contract metadata:
 
-1. Register a new user from the frontend.
-2. Log in with the same credentials.
-3. Let the app create a wallet automatically on first wallet load.
-4. Confirm that the wallet address and token balance are displayed.
-5. Send a transfer through `POST /transactions/transfer` with an authenticated request.
+```bash
+cd blockchain
+npm run full-deploy
+```
 
----
+`npm run full-deploy` performs the local contract lifecycle:
 
-## Running Services Locally (Without Docker)
+1. Compile the Solidity contract.
+2. Deploy the ERC-20 contract to the local Hardhat network.
+3. Sync the ABI and deployed contract address into the application.
 
-### Backend
+The synced contract metadata is written to:
+
+- `backend/src/abi/MyToken.json`
+- `frontend/src/abi/MyToken.json`
+
+The backend reads the configured contract ABI/address through `BlockchainClient`. The frontend uses the synced ABI/address to construct and sign token transfer transactions locally. After a fresh Hardhat chain restart, run `full-deploy` again so the app uses the new local contract address.
+
+## API Surface
+
+### Auth
+
+Authentication uses JWT bearer tokens.
+
+- `POST /auth/register`
+- `POST /auth/login`
+
+Passwords are hashed with bcrypt before persistence. Authenticated routes require an `Authorization: Bearer <token>` header.
+
+### Wallet
+
+Wallet APIs persist public wallet data and expose blockchain-backed balance reads.
+
+- `POST /wallet/create`
+- `GET /wallet/balance`
+
+Wallet records use `walletAddress` in API responses. The backend stores wallet public data only; private keys remain outside the server.
+
+### Transactions
+
+Transaction APIs support signed transfer submission and transaction history.
+
+- `GET /transactions`
+- `POST /transactions/transfer`
+
+Transaction records use camelCase API fields:
+
+- `txId`
+- `txHash`
+- `fromAddress`
+- `toAddress`
+- `amount`
+- `status`
+- `createdAt`
+- `confirmedAt`
+
+Valid transaction statuses are:
+
+- `PENDING`
+- `CONFIRMED`
+- `FAILED`
+
+The backend validates transaction ownership and lifecycle state without taking custody of user private keys.
+
+### Admin API
+
+Admin endpoints are protected by admin authorization. A valid authenticated user must have role `ADMIN`; authenticated non-admin users receive `403`, and missing/invalid tokens receive `401`.
+
+- `GET /admin/summary`
+- `GET /admin/users`
+- `PATCH /admin/users/:userId/freeze`
+- `PATCH /admin/users/:userId/role`
+- `GET /admin/transactions`
+
+Admin user records expose:
+
+- `userId`
+- `email`
+- `role`
+- `isFrozen`
+- `walletAddress`
+- `createdAt`
+
+Supported roles are `USER` and `ADMIN`. Admin users cannot freeze themselves in a way that would block their own current admin access.
+
+### Health
+
+- `GET /health` verifies backend and database readiness.
+- `GET /health/contract` verifies the configured contract connection and returns the contract address/name when available.
+
+## Transaction Flow
+
+The transfer flow is designed around frontend signing and backend verification:
+
+1. The authenticated user creates or loads a local wallet.
+2. The frontend signs and broadcasts the token transfer using local wallet material.
+3. The frontend submits the resulting `txHash`, `fromAddress`, `toAddress`, and `amount` to the backend.
+4. The backend verifies the submitted transaction against the configured token contract.
+5. The backend creates a transaction row with status `PENDING`.
+6. Background confirmation logic waits for the blockchain receipt.
+7. The transaction becomes `CONFIRMED` or `FAILED`.
+8. Transaction history returns the persisted lifecycle state to the frontend.
+
+This flow keeps the backend responsible for verification, persistence, authorization, and lifecycle management while keeping signing authority on the client side.
+
+## Security Model
+
+Tokenix applies the following security boundaries in the MVP:
+
+- JWT authentication protects user, wallet, transaction, and admin routes.
+- bcrypt is used for password hashing.
+- API responses use camelCase while the database remains snake_case.
+- Private keys are not stored by the backend.
+- Private keys are not sent to backend APIs.
+- Backend authorization enforces user ownership and `USER` / `ADMIN` boundaries.
+- Admin APIs require explicit `ADMIN` role authorization.
+- Transaction lifecycle data is persisted for audit-oriented monitoring.
+- HTTPS/TLS is expected at the deployment edge for non-local environments.
+
+The local Hardhat runtime is a development environment. Production deployment would require managed secrets, HTTPS/TLS termination, persistent infrastructure, hardened CORS/origin policy, and a production blockchain/provider strategy.
+
+## Deployment and Runtime Notes
+
+Docker Compose orchestrates the local MVP services:
+
+- PostgreSQL database
+- Express backend
+- React frontend
+- Hardhat local blockchain node
+
+Important runtime notes:
+
+- The Hardhat chain is local and ephemeral.
+- Run `npm run full-deploy` after a fresh blockchain startup or when contract metadata needs to be refreshed.
+- ABI/address sync keeps backend and frontend contract metadata aligned.
+- `BlockchainClient` depends on the synced ABI/address and the configured RPC URL.
+- Contract health is exposed through `/health/contract`.
+- The backend should start only after the Hardhat RPC is healthy in the Docker Compose flow.
+
+## Local Development Without Docker
+
+Backend:
 
 ```bash
 cd backend
@@ -161,15 +228,7 @@ npm install
 npm start
 ```
 
-The backend listens on port 3000 and expects at least:
-
-* `DATABASE_URL`
-* `JWT_SECRET`
-* `RPC_URL`
-
-For local blockchain integration, the backend also expects `backend/src/abi/MyToken.json` to exist after contract deploy/sync.
-
-### Frontend
+Frontend:
 
 ```bash
 cd frontend
@@ -177,9 +236,7 @@ npm install
 npm run dev
 ```
 
-The frontend development server runs on [http://localhost:5173](http://localhost:5173).
-
-### Smart Contracts
+Blockchain:
 
 ```bash
 cd blockchain
@@ -187,124 +244,47 @@ npm install
 npx hardhat node
 ```
 
-In a separate terminal:
+In another terminal:
 
 ```bash
 cd blockchain
 npm run full-deploy
 ```
 
-This compiles the contract, deploys it to the local Hardhat network using `ignition/modules/Token.cjs`, and syncs `MyToken.json` into:
+Required backend environment variables include:
 
-* `backend/src/abi/MyToken.json`
-* `frontend/src/abi/MyToken.json`
+- `DATABASE_URL`
+- `JWT_SECRET`
+- `RPC_URL`
 
-After that, start or restart the backend so it loads the latest contract metadata.
+## Testing
 
-### ABI and Contract Address Sync
+Backend tests:
 
-The project uses `blockchain/scripts/sync-abi.js` to keep the contract metadata aligned across services.
+```bash
+cd backend
+npm test
+```
 
-Flow:
+Frontend build:
 
-* Read the compiled ABI artifact from the Hardhat build output.
-* Read the latest deployed contract address from the newest Ignition deployment folder.
-* Write a combined `MyToken.json` file containing both `abi` and `address`.
-* Copy that file into both backend and frontend.
+```bash
+cd frontend
+npm run build
+```
 
-This means the backend does not rely only on a hardcoded contract address. The runtime source of truth is the synced `MyToken.json` file when present.
-
-### Current Blockchain Flow
-
-![Tokenix current blockchain sequence](docs/assets/tokenix_readme_sequence.svg)
-
-Current end-to-end behavior:
-
-1. User registers or logs in.
-2. Frontend generates a wallet locally and sends only `walletAddress` and `publicKey` to the backend.
-3. Backend stores the wallet and triggers initial funding on the local chain.
-4. Frontend reads wallet balance through the backend.
-5. Transfer requests are sent to the backend API.
-6. Backend creates a `PENDING` transaction row, submits the transfer on-chain, stores the tx hash, and later marks it `CONFIRMED` or `FAILED`.
-
-Important:
-
-* There is no direct blockchain transfer flow from the main frontend app.
-* There is no client-side signed transfer submission yet.
-* Transaction history and statuses currently exist at the backend/API level; the main frontend does not yet expose a full history or transfer screen.
-
----
-
-## Design and Testing
-
-The system design follows UML principles, including:
-
-* Use Case Diagrams
-* Sequence Diagrams
-* Class Diagrams
-* ERD (Entity-Relationship Diagrams)
-
-All components are developed using Test-Driven Development (TDD), with tests written before implementation using appropriate frameworks (e.g., Jest).
-
----
+Blockchain deployment and smoke verification require the local Hardhat runtime and synced ABI/address metadata.
 
 ## Team Responsibilities
 
-### Ilana Estrin — Backend · System Architecture · Security
+### Ilana Estrin — Backend, System Architecture, Security
 
-Leads backend architecture and core system design.  
-Responsible for authentication and authorization (JWT, RBAC), database schema and data integrity, API contract governance, transaction lifecycle orchestration, and system-wide security enforcement.
+Leads backend architecture, authentication and authorization, database schema and data integrity, API contract governance, transaction lifecycle management, and system-wide security boundaries.
 
-### Shely Zino — Frontend · Client Layer · Wallet Experience
+### Shely Zino — Frontend, Client Layer, Wallet Experience
 
-Leads the client application architecture and user interaction layer.  
-Responsible for the React frontend, wallet experience design, wallet creation flow, and full API integration including payload structure, status handling, and error management. Client-side signing and digital signature flows are part of the planned next phase.
+Leads the React frontend, wallet experience, local signing workflow, API integration, status handling, and user-facing transaction flows.
 
-### Lior Zvieli — Blockchain · Smart Contract · On-Chain Integration
+### Lior Zvieli — Blockchain, Smart Contract, On-Chain Integration
 
-Leads the blockchain and smart contract domain.  
-Responsible for the ERC-20 smart contract design and deployment, on-chain logic (minting, transfers, validation), Ethers.js integration layer, and blockchain-level testing and reliability.
-
----
-
-## Work Plan / MVP
-
-Implemented now:
-
-* Backend API with auth, wallet creation, balance lookup, transfer endpoint, and transaction history endpoint.
-* React frontend with login, register, wallet creation, and balance display.
-* Solidity ERC-20 smart contract with local deployment scripts.
-* Docker Compose setup for running all components together.
-* Transaction status tracking in PostgreSQL.
-
-Not yet implemented in the main frontend:
-
-* Transfer UI
-* Transaction history UI
-* Admin area
-* Client-side signing flow
-
-## Planned Architecture (Next Phase)
-
-The next phase is planned to move the system toward a stronger wallet-security model.
-
-Target architecture:
-
-* Client-side signing for user transfers.
-* Backend verification of signed payloads before submission.
-* Backend remains the central control layer for auth, business rules, transaction tracking, and policy enforcement.
-* No user private key stored on the server.
-* No direct blockchain submission from the production frontend flow.
-
-Target product flow:
-
-`login -> wallet -> balance -> transfer (sign -> submit) -> history`
-
-Planned transfer flow:
-
-1. Frontend prepares the transfer payload.
-2. Client signs the payload locally.
-3. Frontend sends the signed payload to the backend.
-4. Backend verifies the signature and validates business rules.
-5. Backend submits the transaction and tracks lifecycle/status.
-6. Frontend shows transaction history and final status updates.
+Leads ERC-20 smart contract design, local blockchain deployment, ABI/address synchronization, Ethers.js integration support, and blockchain reliability testing.
