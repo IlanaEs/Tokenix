@@ -23,6 +23,8 @@ export type TransactionStatus = "PENDING" | "CONFIRMED" | "FAILED";
 
 export type TransactionType = "SYSTEM_FUNDING" | "USER_TRANSFER";
 
+export type AdminRole = "USER" | "ADMIN";
+
 export type TransactionListItem = {
   txId: number | string;
   type: TransactionType;
@@ -31,6 +33,37 @@ export type TransactionListItem = {
   amount: string | null;
   status: TransactionStatus;
   txHash: string | null;
+  createdAt: string;
+  confirmedAt: string | null;
+};
+
+export type AdminSummary = {
+  totalUsers: number;
+  activeUsers: number;
+  frozenUsers: number;
+  adminUsers: number;
+  totalTransactions: number;
+  pendingTransactions: number;
+  confirmedTransactions: number;
+  failedTransactions: number;
+};
+
+export type AdminUser = {
+  userId: number | string;
+  email: string;
+  role: AdminRole;
+  isFrozen: boolean;
+  walletAddress: string | null;
+  createdAt: string;
+};
+
+export type AdminTransaction = {
+  txId: number | string;
+  txHash: string | null;
+  fromAddress: string;
+  toAddress: string;
+  amount: string;
+  status: TransactionStatus;
   createdAt: string;
   confirmedAt: string | null;
 };
@@ -224,4 +257,36 @@ export async function fetchTransactions(
   const path = query ? `/transactions?${query}` : "/transactions";
 
   return apiFetch<TransactionListItem[]>(path);
+}
+
+export async function fetchAdminSummary(): Promise<AdminSummary> {
+  return apiFetch<AdminSummary>("/admin/summary");
+}
+
+export async function fetchAdminUsers(): Promise<AdminUser[]> {
+  return apiFetch<AdminUser[]>("/admin/users");
+}
+
+export async function freezeAdminUser(
+  userId: number | string,
+  isFrozen: boolean
+): Promise<AdminUser> {
+  return apiFetch<AdminUser>(`/admin/users/${encodeURIComponent(String(userId))}/freeze`, {
+    method: "PATCH",
+    body: JSON.stringify({ isFrozen }),
+  });
+}
+
+export async function changeAdminUserRole(
+  userId: number | string,
+  role: AdminRole
+): Promise<AdminUser> {
+  return apiFetch<AdminUser>(`/admin/users/${encodeURIComponent(String(userId))}/role`, {
+    method: "PATCH",
+    body: JSON.stringify({ role }),
+  });
+}
+
+export async function fetchAdminTransactions(): Promise<AdminTransaction[]> {
+  return apiFetch<AdminTransaction[]>("/admin/transactions");
 }

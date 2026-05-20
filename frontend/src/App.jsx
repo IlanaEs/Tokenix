@@ -5,8 +5,9 @@ import Login from "./pages/Login.jsx";
 import Wallet from "./pages/Wallet.jsx";
 import SendTokens from "./pages/SendTokens.jsx";
 import TransactionHistory from "./pages/TransactionHistory.jsx";
+import Admin from "./pages/Admin.jsx";
 
-const PROTECTED_MODES = new Set(["wallet", "sendTokens", "history"]);
+const PROTECTED_MODES = new Set(["wallet", "sendTokens", "history", "admin"]);
 
 export default function App() {
   const [mode, setMode] = useState(() => (getToken() ? "wallet" : "login"));
@@ -30,13 +31,14 @@ export default function App() {
   }
 
   return (
-    <div className="appShell">
+    <div className={activeMode === "admin" ? "appShell adminAppShell" : "appShell"}>
       {activeMode === "wallet" ? (
         isAuthenticated ? (
           <Wallet
             onLogout={() => setMode("login")}
             onShowSendTokens={() => showMode("sendTokens")}
             onShowHistory={() => showMode("history")}
+            onShowAdmin={() => showMode("admin")}
           />
         ) : (
           <Login
@@ -46,6 +48,11 @@ export default function App() {
         )
       ) : activeMode === "history" ? (
         <TransactionHistory onBack={() => setMode("wallet")} />
+      ) : activeMode === "admin" ? (
+        <Admin
+          onBack={() => setMode("wallet")}
+          onUnauthenticated={() => setMode("login")}
+        />
       ) : activeMode === "sendTokens" ? (
         <SendTokens
           onBack={() => setMode("wallet")}

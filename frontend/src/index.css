@@ -302,12 +302,155 @@ body{
   margin: 8px 0 0;
 }
 
+.adminAppShell{
+  max-width: 1180px;
+}
+
+.adminScreen{
+  width: 100%;
+}
+
+.adminHeader,
+.adminSectionHeader{
+  display:flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.adminHeaderActions{
+  min-width: 260px;
+}
+
+.adminSection{
+  display:flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.adminFilters{
+  display:flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.adminSearchField{
+  flex: 1 1 280px;
+}
+
+.adminCopyFeedback{
+  margin: 0;
+}
+
+.adminSummaryGrid{
+  display:grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.adminSummaryTile{
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.03);
+}
+
+.adminTableWrap{
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.02);
+}
+
+.adminTable{
+  width: 100%;
+  min-width: 920px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.adminTable th,
+.adminTable td{
+  padding: 11px 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.adminTable th{
+  color: var(--muted);
+  font-weight: 650;
+  background: rgba(255,255,255,0.04);
+}
+
+.adminTable tr:last-child td{
+  border-bottom: none;
+}
+
+.adminTableButton{
+  width: auto;
+  min-width: 96px;
+  padding: 8px 10px;
+}
+
+.adminSelect{
+  width: 100%;
+  min-width: 92px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.08);
+  color: var(--text);
+  font: inherit;
+}
+
+.adminBadge{
+  display:inline-block;
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.adminBadge.success{
+  border-color: rgba(53,208,127,0.38);
+  background: rgba(53,208,127,0.14);
+  color: #b9f6d5;
+}
+
+.adminBadge.warning{
+  border-color: rgba(245,184,75,0.38);
+  background: rgba(245,184,75,0.14);
+  color: #ffe1a3;
+}
+
+.adminBadge.danger{
+  border-color: rgba(255,92,122,0.45);
+  background: rgba(255,92,122,0.14);
+  color: #ffc8d4;
+}
+
 .footer{ margin-top: 14px; font-size: 13px; }
 
 @media (max-width: 860px){
   .grid{ grid-template-columns: 1fr; }
   .header{ flex-direction: column; align-items: flex-start; }
   .pill{ width: 100%; }
+  .adminHeader,
+  .adminSectionHeader{
+    flex-direction: column;
+  }
+  .adminHeaderActions{
+    min-width: 100%;
+  }
+  .adminSummaryGrid{
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .actionsRow .btn{
     min-width: 100%;
   }
@@ -317,5 +460,8 @@ body{
   .appShell,
   .page{
     padding: 24px 14px 20px;
+  }
+  .adminSummaryGrid{
+    grid-template-columns: 1fr;
   }
 }

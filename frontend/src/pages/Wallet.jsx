@@ -15,7 +15,7 @@ async function fetchBalance() {
   return apiFetch("/wallet/balance");
 }
 
-export default function Wallet({ onLogout, onShowSendTokens, onShowHistory }) {
+export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onShowAdmin }) {
   const [wallet, setWallet] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadingMessage, setLoadingMessage] = useState("Loading wallet...");
@@ -161,6 +161,15 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory }) {
           disabled={loading || !wallet}
         >
           History
+        </button>
+
+        <button
+          type="button"
+          className="btn"
+          onClick={onShowAdmin}
+          disabled={loading || !wallet}
+        >
+          Admin
         </button>
 
         <button
