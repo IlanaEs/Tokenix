@@ -6,6 +6,7 @@ import {
   getErrorMessage,
 } from "../lib/api";
 import { clearToken } from "../lib/token";
+import { storeWalletPrivateKey } from "../lib/walletKey";
 
 const LIVE_BALANCE_NOTICE =
   "Balance is now loaded from the blockchain-backed wallet endpoint. If the Hardhat node, ABI sync, or contract runtime is unavailable, this request can still fail.";
@@ -40,16 +41,22 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory }) {
       const generatedWallet = ethers.Wallet.createRandom();
       const publicKey = generatedWallet.signingKey.publicKey;
       const walletAddress = ethers.computeAddress(publicKey);
+      let createdNewWallet = false;
 
       try {
         await apiFetch("/wallet/create", {
           method: "POST",
           body: JSON.stringify({ walletAddress, publicKey }),
         });
+        createdNewWallet = true;
       } catch (requestError) {
         if (!(requestError instanceof ApiError) || requestError.status !== 409) {
           throw requestError;
         }
+      }
+
+      if (createdNewWallet) {
+        storeWalletPrivateKey(walletAddress, generatedWallet.privateKey);
       }
 
       setLoadingMessage("Loading wallet...");
