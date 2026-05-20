@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
-    "test": "node --test src/**/*.test.js"
+    "test": "node --test src/**/*.test.js",
+    "test:e2e": "node scripts/test-blockchain-logic.js"
   },
   "dependencies": {
     "ethers": "^6.16.0",

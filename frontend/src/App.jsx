@@ -47,7 +47,10 @@ export default function App() {
       ) : activeMode === "history" ? (
         <TransactionHistory onBack={() => setMode("wallet")} />
       ) : activeMode === "sendTokens" ? (
-        <SendTokens onBack={() => setMode("wallet")} />
+        <SendTokens
+          onBack={() => setMode("wallet")}
+          onShowHistory={() => setMode("history")}
+        />
       ) : activeMode === "register" ? (
         <Register
           onSuccess={() => setMode("wallet")}
