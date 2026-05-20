@@ -2,6 +2,7 @@ import express from 'express';
 import { authRoutes } from './routes/authRoutes.js';
 import { walletRoutes } from './routes/walletRoutes.js';
 import { transactionRoutes } from './routes/transactionRoutes.js';
+import { adminRoutes } from './routes/adminRoutes.js';
 import BlockchainClient from './services/BlockchainClient.js';
 import { pool } from './db.js';
 import { runDatabaseBootstrap } from './bootstrap/runDatabaseBootstrap.js';
@@ -58,6 +59,7 @@ app.get('/balance/:walletAddress', async (req, res, next) => {
 app.use('/auth', authRoutes);
 app.use('/wallet', walletRoutes);
 app.use('/transactions', transactionRoutes);
+app.use('/admin', adminRoutes);
 
 try {
   await runDatabaseBootstrap();
