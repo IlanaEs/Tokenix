@@ -245,7 +245,13 @@ function finalizeTransactionInBackground(txId, txHash) {
       await markTransactionFailed(txId);
     } catch (error) {
       console.error(`Failed to finalize transaction ${txId} (${txHash}):`, error);
-      await markTransactionFailed(txId);
+      // Guard the failure write itself: a secondary DB error here must not
+      // escape as an unhandled rejection and crash the backend process.
+      try {
+        await markTransactionFailed(txId);
+      } catch (markError) {
+        console.error(`Failed to mark transaction ${txId} as FAILED:`, markError);
+      }
     }
   })();
 }
