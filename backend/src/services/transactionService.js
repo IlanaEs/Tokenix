@@ -2,6 +2,7 @@ import { ethers } from "ethers";
 import { pool } from "../db.js";
 import BlockchainClient from "./BlockchainClient.js";
 import { getUserWalletAddress } from "./walletService.js";
+import { createHttpError } from "../lib/httpError.js";
 
 const blockchainClient = new BlockchainClient();
 const MAX_TRANSFER_MESSAGE_AGE_MS = 5 * 60 * 1000;
@@ -59,13 +60,6 @@ function normalizeTransferInput({ toAddress, amount }) {
     toAddress: normalizedAddress,
     amount: normalizedAmount,
   };
-}
-
-function createHttpError(message, status) {
-  const error = new Error(message);
-  error.status = status;
-  error.statusCode = status;
-  return error;
 }
 
 function assertSignedMessageShape(message) {
