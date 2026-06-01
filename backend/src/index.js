@@ -58,6 +58,13 @@ app.use('/wallet', walletRoutes);
 app.use('/transactions', transactionRoutes);
 app.use('/admin', adminRoutes);
 
+// Catch-all for unmatched routes — keeps 404s consistent with the JSON error
+// envelope instead of Express's default HTML response. Registered after all
+// route mounts and before the error handler.
+app.use((req, res) => {
+  return res.status(404).json({ message: 'Not found' });
+});
+
 // Global error handler — must be the last middleware registered. Returns the
 // uniform { message } envelope and never leaks stack traces / internal error
 // messages on 500 responses.
