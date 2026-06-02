@@ -3,11 +3,12 @@ import { requireAuth } from "../middleware/requireAuth.js";
 import {
   getTransactionsByUserId,
   recordSubmittedTransfer,
+  TRANSACTION_TYPES,
 } from "../services/transactionService.js";
 
 export const transactionRoutes = express.Router();
 
-const ALLOWED_TYPES = new Set(["SYSTEM_FUNDING", "USER_TRANSFER"]);
+const ALLOWED_TYPES = new Set(Object.values(TRANSACTION_TYPES));
 
 transactionRoutes.get("/", requireAuth, async (req, res) => {
   try {

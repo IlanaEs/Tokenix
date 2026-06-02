@@ -49,9 +49,6 @@ app.get('/balance/:walletAddress', async (req, res, next) => {
     const balance = await blockchainClient.getBalance(walletAddress);
     return res.json({ walletAddress, balance });
   } catch (e) {
-    if (e.statusCode) {
-      return res.status(e.statusCode).json({ message: e.message });
-    }
     next(e);
   }
 });
@@ -60,6 +57,41 @@ app.use('/auth', authRoutes);
 app.use('/wallet', walletRoutes);
 app.use('/transactions', transactionRoutes);
 app.use('/admin', adminRoutes);
+
+// Catch-all for unmatched routes — keeps 404s consistent with the JSON error
+// envelope instead of Express's default HTML response. Registered after all
+// route mounts and before the error handler.
+app.use((req, res) => {
+  return res.status(404).json({ message: 'Not found' });
+});
+
+// Global error handler — must be the last middleware registered. Returns the
+// uniform { message } envelope and never leaks stack traces / internal error
+// messages on 500 responses.
+app.use((err, req, res, next) => {
+  console.error(err);
+  const status = err.status || err.statusCode || 500;
+  const message = status === 500 ? 'Internal server error' : err.message;
+  return res.status(status).json({ message });
+});
+
+// Validate required environment configuration before starting. Required
+// secrets fail fast; blockchain vars only warn so the client can degrade
+// gracefully (it warns and no-ops when address/ABI are unavailable).
+if (!process.env.JWT_SECRET) {
+  console.error("Missing required environment variable: JWT_SECRET");
+  process.exit(1);
+}
+if (!process.env.DATABASE_URL) {
+  console.error("Missing required environment variable: DATABASE_URL");
+  process.exit(1);
+}
+if (!process.env.RPC_URL) {
+  console.warn("RPC_URL is not set; blockchain features may be unavailable.");
+}
+if (!process.env.CONTRACT_ADDRESS) {
+  console.warn("CONTRACT_ADDRESS is not set; blockchain features may be unavailable.");
+}
 
 try {
   await runDatabaseBootstrap();

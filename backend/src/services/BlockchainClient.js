@@ -12,6 +12,15 @@ const DEFAULT_ETH_FUNDING_AMOUNT = '0.005';
 const DEFAULT_TOKEN_PROVISION_AMOUNT = '100';
 const BLOCKCHAIN_CONFIG_ERROR = 'Blockchain client is not configured: missing ABI/Contract Address';
 const ENABLE_TRANSFER_EVENT_LOGS = process.env.ENABLE_TRANSFER_EVENT_LOGS === 'true';
+const WAIT_FOR_TX_TIMEOUT_MS = 60_000;
+
+function assertValidTxHash(txHash) {
+  if (!ethers.isHexString(txHash, 32)) {
+    const error = new Error('Invalid txHash');
+    error.status = 400;
+    throw error;
+  }
+}
 
 export default class BlockchainClient {
   constructor() {
@@ -154,11 +163,13 @@ export default class BlockchainClient {
 
   async getTransaction(txHash) {
     this.ensureConfigured();
+    assertValidTxHash(txHash);
     return this.provider.getTransaction(txHash);
   }
 
   async getTransactionReceipt(txHash) {
     this.ensureConfigured();
+    assertValidTxHash(txHash);
     return this.provider.getTransactionReceipt(txHash);
   }
 
@@ -207,7 +218,11 @@ export default class BlockchainClient {
 
   async waitForTransaction(txHash, confirmations = 1) {
     try {
-      const receipt = await this.provider.waitForTransaction(txHash, confirmations);
+      const receipt = await this.provider.waitForTransaction(
+        txHash,
+        confirmations,
+        WAIT_FOR_TX_TIMEOUT_MS
+      );
       if (!receipt) throw new Error('Receipt not found');
       return receipt;
     } catch (err) {

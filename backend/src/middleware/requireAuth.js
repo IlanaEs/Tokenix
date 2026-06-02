@@ -1,6 +1,8 @@
 import jwt from "jsonwebtoken";
 import { pool } from "../db.js";
 
+const jwtSecret = process.env.JWT_SECRET;
+
 export async function requireAuth(req, res, next) {
   const header = req.headers.authorization || "";
   const [type, token] = header.split(" ");
@@ -10,7 +12,7 @@ export async function requireAuth(req, res, next) {
   }
 
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    const payload = jwt.verify(token, jwtSecret);
     const userId = Number(payload.sub);
     if (!Number.isInteger(userId)) {
       return res.status(401).json({ message: "Invalid token subject" });

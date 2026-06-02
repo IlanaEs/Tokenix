@@ -123,6 +123,10 @@ export async function createWallet({ userId, walletAddress, publicKey }) {
     const { rows } = await pool.query(q, values);
     const created = rows[0];
 
+    // Funding is intentionally fire-and-forget: wallet creation succeeds and
+    // returns immediately regardless of funding outcome. A funding failure is
+    // non-fatal here, so the .catch only logs the error and never rejects back
+    // into the create flow.
     _fundAndLogWallet(created.userId, created.walletAddress).catch((err) => {
       console.error("Background funding task error:", err);
     });
