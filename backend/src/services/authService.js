@@ -65,7 +65,7 @@ export const login = async ({ email, password }) => {
   }
 
   const userResult = await pool.query(
-    'SELECT user_id AS "userId", email, password_hash FROM users WHERE email = $1 LIMIT 1',
+    'SELECT user_id AS "userId", email, password_hash, is_frozen AS "isFrozen" FROM users WHERE email = $1 LIMIT 1',
     [email]
   );
 
@@ -78,6 +78,14 @@ export const login = async ({ email, password }) => {
 
   if (!isPasswordValid) {
     throw createHttpError('invalid credentials', 401);
+  }
+
+  // Reject frozen accounts even with valid credentials. Flagged so the route
+  // renders the uniform { message: "User account is frozen" } body.
+  if (user.isFrozen) {
+    const frozenError = createHttpError('User account is frozen', 403);
+    frozenError.code = 'USER_FROZEN';
+    throw frozenError;
   }
 
   const token = createToken({ sub: user.userId, email: user.email });

@@ -108,6 +108,8 @@ Authentication uses JWT bearer tokens.
 
 Passwords are hashed with bcrypt before persistence. Authenticated routes require an `Authorization: Bearer <token>` header.
 
+The system supports email + password registration and login. Email ownership is not verified: full email verification is **not implemented** in this MVP because the project does not include an email delivery service (no SMTP, SendGrid, or similar provider). Login is not blocked on email verification. Email verification is tracked as a known limitation and future improvement (see [Known Limitations](#known-limitations--future-improvements)).
+
 ### Wallet
 
 Wallet APIs persist public wallet data and expose blockchain-backed balance reads.
@@ -199,6 +201,12 @@ Tokenix applies the following security boundaries in the MVP:
 - HTTPS/TLS is expected at the deployment edge for non-local environments.
 
 The local Hardhat runtime is a development environment. Production deployment would require managed secrets, HTTPS/TLS termination, persistent infrastructure, hardened CORS/origin policy, and a production blockchain/provider strategy.
+
+## Known Limitations / Future Improvements
+
+The following are recognized gaps in the current MVP and are documented as future improvements rather than active functionality:
+
+- **Email verification is not implemented.** Registration and login work with email + password, but the supplied email address is not verified for ownership. The MVP does not include an email delivery service, so a verification flow (sending and confirming a verification link or code) is out of scope at this stage. Login is intentionally not blocked on email verification. Adding this would require integrating an email provider and an associated verification flow.
 
 ## Deployment and Runtime Notes
 

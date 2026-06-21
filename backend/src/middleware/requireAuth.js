@@ -36,6 +36,13 @@ export async function requireAuth(req, res, next) {
       return res.status(401).json({ message: "Invalid token" });
     }
 
+    // Frozen users are denied even with an otherwise valid JWT. Checked here so
+    // every authenticated route (and requireAdmin, which wraps this) is covered
+    // without per-route changes.
+    if (user.isFrozen) {
+      return res.status(403).json({ message: "User account is frozen" });
+    }
+
     req.user = { id: userId, userId };
     req.auth = {
       user: {

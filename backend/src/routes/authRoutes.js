@@ -17,6 +17,9 @@ authRoutes.post('/login', async (req, res) => {
     const result = await login(req.body);
     res.status(200).json(result);
   } catch (error) {
+    if (error.code === 'USER_FROZEN') {
+      return res.status(403).json({ message: 'User account is frozen' });
+    }
     res.status(error.status || 500).json({ message: error.message || 'internal server error' });
   }
 });
