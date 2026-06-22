@@ -267,6 +267,29 @@ body{
   color: var(--muted);
 }
 
+.walletKeyActions{
+  margin-top: 12px;
+}
+
+.walletKeyForm{
+  margin-top: 12px;
+}
+
+.privateKeyBox{
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(0,0,0,0.24);
+  color: rgba(255,255,255,0.88);
+  font-size: 13px;
+}
+
+.privateKeyInput{
+  min-height: 92px;
+  resize: vertical;
+}
+
 .emptyState{
   padding: 14px;
   border: 1px dashed var(--line);
