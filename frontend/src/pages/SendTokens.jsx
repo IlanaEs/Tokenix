@@ -138,7 +138,7 @@ export default function SendTokens({ onBack, onShowHistory }) {
 
       if (!privateKey) {
         throw new Error(
-          "This browser does not have the local private key for this wallet. Transfers cannot be signed from here."
+          "Your wallet was created in a different browser session and the signing key is not available here.\nFor security reasons, transfers can only be signed from the browser where the wallet was originally created.\nPlease import your private key to enable transfers from this browser."
         );
       }
 

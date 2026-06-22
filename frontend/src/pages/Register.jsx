@@ -80,6 +80,9 @@ export default function Register({ onSuccess, onShowLogin }) {
             disabled={loading}
             required
           />
+          <span className="helperText">
+            At least 8 characters, one uppercase letter, one lowercase letter, one number, and one special character.
+          </span>
         </label>
 
         <button className="btn" disabled={loading}>
