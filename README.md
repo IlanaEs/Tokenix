@@ -35,6 +35,7 @@ The MVP currently supports:
 - Email/password authentication
 - JWT-protected backend APIs
 - Wallet creation using `walletAddress` and public key data
+- Client-side wallet private key import/export (keys remain in the browser only)
 - Blockchain-backed wallet balance lookup
 - Frontend-signed transfers
 - Transaction persistence and history retrieval
@@ -201,6 +202,26 @@ Tokenix applies the following security boundaries in the MVP:
 - HTTPS/TLS is expected at the deployment edge for non-local environments.
 
 The local Hardhat runtime is a development environment. Production deployment would require managed secrets, HTTPS/TLS termination, persistent infrastructure, hardened CORS/origin policy, and a production blockchain/provider strategy.
+
+### Security & Validation
+
+Tokenix follows a security-by-design approach:
+
+- Private keys are generated and stored only on the client side (browser `localStorage`); they are never sent to or stored by the backend.
+- Transaction signing is performed locally in the frontend using cryptographic signatures.
+- Passwords are stored using secure hashing with a salt (bcrypt).
+- Role-Based Access Control (RBAC) protects administrative operations (`USER` / `ADMIN`).
+- HTTPS/TLS is expected at the deployment edge for non-local environments.
+- Transaction ownership and submitted transaction data are verified by the backend before a transaction record is persisted.
+
+Security testing performed:
+
+- Authentication and authorization validation
+- Private key exposure checks
+- Signature verification tests
+- Transaction ownership validation
+- Invalid wallet import rejection
+- Security review with no High or Medium severity findings
 
 ## Known Limitations / Future Improvements
 
