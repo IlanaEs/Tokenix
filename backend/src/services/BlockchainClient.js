@@ -28,6 +28,9 @@ export default class BlockchainClient {
     this.contract = null;
     this.contractAddress = null;
     this.isListening = false;
+    // Serializes dev faucet operations that send transactions from the shared
+    // admin account (account 0). See _runExclusiveFaucet / fundAccount.
+    this._faucetQueue = Promise.resolve();
 
     this._initialize();
   }
@@ -126,8 +129,38 @@ export default class BlockchainClient {
   }
 
  
+  // Serialize admin-signer faucet operations on this instance.
+  //
+  // The dev faucet funds each new wallet by sending an ETH transfer and a token
+  // mint from a single shared admin account (account 0). When two wallet
+  // creations run close together, both flows fetch the same pending nonce, so
+  // one account's transaction is dropped and its waitForTransaction hangs until
+  // the timeout — leaving the funding row stuck and then marked FAILED.
+  //
+  // Chaining every faucet run through this queue guarantees one funding
+  // completes (and consumes its nonce) before the next begins, removing the
+  // contention. This is dev/test funding infrastructure only: the production
+  // frontend-signed transfer flow never uses the admin signer, so it is
+  // unaffected by this serialization.
+  _runExclusiveFaucet(operation) {
+    const result = this._faucetQueue.then(operation, operation);
+    // Keep the queue alive regardless of this run's outcome so a single failed
+    // funding does not poison subsequent faucet operations.
+    this._faucetQueue = result.then(
+      () => undefined,
+      () => undefined
+    );
+    return result;
+  }
+
   async fundAccount(toAddress, amountEth = DEFAULT_ETH_FUNDING_AMOUNT, tokenAmount = DEFAULT_TOKEN_PROVISION_AMOUNT) {
     this.ensureConfigured();
+    return this._runExclusiveFaucet(() =>
+      this._fundAccountUnlocked(toAddress, amountEth, tokenAmount)
+    );
+  }
+
+  async _fundAccountUnlocked(toAddress, amountEth, tokenAmount) {
     try {
       const accounts = await this.provider.listAccounts();
       if (!accounts || accounts.length === 0) {
