@@ -5,7 +5,7 @@ import {
   apiFetch,
   getErrorMessage,
 } from "../lib/api";
-import { clearToken } from "../lib/token";
+import { clearToken, getToken } from "../lib/token";
 import { getWalletPrivateKey, storeWalletPrivateKey } from "../lib/walletKey";
 
 const LIVE_BALANCE_NOTICE =
@@ -16,6 +16,73 @@ const MISSING_KEY_MESSAGE =
 
 async function fetchBalance() {
   return apiFetch("/wallet/balance");
+}
+
+const walletInitializationBySession = new Map();
+
+function getWalletInitializationKey() {
+  return getToken() || "anonymous";
+}
+
+async function fetchFundedBalance() {
+  let latest = await fetchBalance();
+
+  for (let attempt = 0; attempt < 8 && Number(latest.balance) <= 0; attempt += 1) {
+    await new Promise((resolve) => {
+      window.setTimeout(resolve, 750);
+    });
+    latest = await fetchBalance();
+  }
+
+  return latest;
+}
+
+async function initializeWallet() {
+  try {
+    return await fetchBalance();
+  } catch (requestError) {
+    if (!(requestError instanceof ApiError) || requestError.status !== 404) {
+      throw requestError;
+    }
+  }
+
+  const generatedWallet = ethers.Wallet.createRandom();
+  const publicKey = generatedWallet.signingKey.publicKey;
+  const walletAddress = ethers.computeAddress(publicKey);
+  let createdNewWallet = false;
+
+  try {
+    await apiFetch("/wallet/create", {
+      method: "POST",
+      body: JSON.stringify({ walletAddress, publicKey }),
+    });
+    createdNewWallet = true;
+  } catch (requestError) {
+    if (!(requestError instanceof ApiError) || requestError.status !== 409) {
+      throw requestError;
+    }
+  }
+
+  if (createdNewWallet) {
+    storeWalletPrivateKey(walletAddress, generatedWallet.privateKey);
+  }
+
+  return fetchFundedBalance();
+}
+
+function getWalletInitialization() {
+  const key = getWalletInitializationKey();
+  const existingInitialization = walletInitializationBySession.get(key);
+
+  if (existingInitialization) {
+    return existingInitialization;
+  }
+
+  const initialization = initializeWallet().finally(() => {
+    walletInitializationBySession.delete(key);
+  });
+  walletInitializationBySession.set(key, initialization);
+  return initialization;
 }
 
 export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onShowAdmin }) {
@@ -31,50 +98,16 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onSh
 
   const loadWallet = useCallback(async () => {
     setLoading(true);
-    setLoadingMessage("Loading wallet...");
+    setLoadingMessage("Initializing wallet...");
     setError("");
     setKeyMessage("");
     setKeyError("");
     setExportedPrivateKey("");
 
     try {
-      try {
-        const existing = await fetchBalance();
-        setWallet(existing);
-        setHasLocalPrivateKey(Boolean(getWalletPrivateKey(existing.walletAddress)));
-        return;
-      } catch (requestError) {
-        if (!(requestError instanceof ApiError) || requestError.status !== 404) {
-          throw requestError;
-        }
-      }
-
-      setLoadingMessage("Creating wallet...");
-      const generatedWallet = ethers.Wallet.createRandom();
-      const publicKey = generatedWallet.signingKey.publicKey;
-      const walletAddress = ethers.computeAddress(publicKey);
-      let createdNewWallet = false;
-
-      try {
-        await apiFetch("/wallet/create", {
-          method: "POST",
-          body: JSON.stringify({ walletAddress, publicKey }),
-        });
-        createdNewWallet = true;
-      } catch (requestError) {
-        if (!(requestError instanceof ApiError) || requestError.status !== 409) {
-          throw requestError;
-        }
-      }
-
-      if (createdNewWallet) {
-        storeWalletPrivateKey(walletAddress, generatedWallet.privateKey);
-      }
-
-      setLoadingMessage("Loading wallet...");
-      const created = await fetchBalance();
-      setWallet(created);
-      setHasLocalPrivateKey(Boolean(getWalletPrivateKey(created.walletAddress)));
+      const initializedWallet = await getWalletInitialization();
+      setWallet(initializedWallet);
+      setHasLocalPrivateKey(Boolean(getWalletPrivateKey(initializedWallet.walletAddress)));
     } catch (requestError) {
       if (
         requestError instanceof ApiError &&
