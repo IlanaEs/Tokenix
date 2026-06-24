@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ethers } from "ethers";
 import {
   ApiError,
   apiFetch,
+  fetchTransactions,
   getErrorMessage,
 } from "../lib/api";
 import { clearToken } from "../lib/token";
@@ -28,14 +29,78 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onSh
   const [importPrivateKey, setImportPrivateKey] = useState("");
   const [keyMessage, setKeyMessage] = useState("");
   const [keyError, setKeyError] = useState("");
+  // Funding (initial faucet mint) is asynchronous on the backend, so a freshly
+  // created wallet reads 0 until the mint confirms. Track its status to surface
+  // a clear PENDING/CONFIRMED/FAILED/TIMEOUT state instead of a confusing 0.
+  const [fundingStatus, setFundingStatus] = useState(null);
+
+  // Run the auto-bootstrap exactly once (StrictMode double-invokes effects in
+  // dev, which would otherwise fire two /wallet/create calls → a spurious 409).
+  const didInitRef = useRef(false);
+  // Serialize overlapping loadWallet runs (auto-bootstrap vs. manual reload).
+  const inFlightRef = useRef(false);
+  // Lets an in-flight funding poll be cancelled on reload/unmount.
+  const pollAbortRef = useRef(false);
+
+  // Poll the backend until the initial faucet funding settles, converging the
+  // displayed balance live. The authoritative signal is the SYSTEM_FUNDING
+  // transaction row status; the balance re-read is the convergence mechanism.
+  const pollFundingUntilSettled = useCallback(async () => {
+    const MAX_ATTEMPTS = 15;
+    const INTERVAL_MS = 2000;
+
+    setFundingStatus("PENDING");
+
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+      if (pollAbortRef.current) return;
+
+      try {
+        const fundingRows = await fetchTransactions("SYSTEM_FUNDING");
+        if (pollAbortRef.current) return;
+        const latest = fundingRows[0];
+
+        try {
+          const refreshed = await fetchBalance();
+          if (pollAbortRef.current) return;
+          setWallet(refreshed);
+          setHasLocalPrivateKey(Boolean(getWalletPrivateKey(refreshed.walletAddress)));
+        } catch {
+          // Transient balance read failures are non-fatal while polling.
+        }
+
+        if (latest?.status === "CONFIRMED") {
+          setFundingStatus("CONFIRMED");
+          return;
+        }
+        if (latest?.status === "FAILED") {
+          setFundingStatus("FAILED");
+          return;
+        }
+      } catch {
+        // Ignore transient errors and keep polling within the budget.
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, INTERVAL_MS));
+    }
+
+    if (!pollAbortRef.current) {
+      setFundingStatus("TIMEOUT");
+    }
+  }, []);
 
   const loadWallet = useCallback(async () => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+
     setLoading(true);
     setLoadingMessage("Loading wallet...");
     setError("");
     setKeyMessage("");
     setKeyError("");
     setExportedPrivateKey("");
+    // Cancel any prior funding poll and clear stale funding UI for this load.
+    pollAbortRef.current = true;
+    setFundingStatus(null);
 
     try {
       try {
@@ -75,6 +140,13 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onSh
       const created = await fetchBalance();
       setWallet(created);
       setHasLocalPrivateKey(Boolean(getWalletPrivateKey(created.walletAddress)));
+
+      // Only a brand-new wallet triggers background faucet funding; poll until
+      // it settles so the balance converges from 0 → 100 with visible status.
+      if (createdNewWallet) {
+        pollAbortRef.current = false;
+        void pollFundingUntilSettled();
+      }
     } catch (requestError) {
       if (
         requestError instanceof ApiError &&
@@ -89,13 +161,24 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onSh
       setHasLocalPrivateKey(false);
       setError(getErrorMessage(requestError, "Failed to load wallet."));
     } finally {
+      inFlightRef.current = false;
       setLoading(false);
     }
-  }, [onLogout]);
+  }, [onLogout, pollFundingUntilSettled]);
 
   useEffect(() => {
+    if (didInitRef.current) return;
+    didInitRef.current = true;
     void loadWallet();
   }, [loadWallet]);
+
+  // Stop any in-flight funding poll when the component unmounts.
+  useEffect(
+    () => () => {
+      pollAbortRef.current = true;
+    },
+    []
+  );
 
   const walletAddress = wallet?.walletAddress || "";
   const balance = wallet?.balance ?? "";
@@ -217,6 +300,34 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onSh
               <span className="big">{balance || "0"}</span>
             </div>
           </div>
+
+          {fundingStatus === "PENDING" ? (
+            <div className="notice info">
+              <strong>Funding in progress</strong>
+              <p>Your initial 100 tokens are being minted on-chain. This usually takes a few seconds.</p>
+            </div>
+          ) : null}
+
+          {fundingStatus === "CONFIRMED" ? (
+            <div className="notice info">
+              <strong>Funding complete</strong>
+              <p>Your wallet has been funded and the balance is up to date.</p>
+            </div>
+          ) : null}
+
+          {fundingStatus === "FAILED" ? (
+            <div className="notice error">
+              <strong>Funding failed</strong>
+              <p>The initial funding transaction did not complete. Use Reload Wallet to retry checking the balance.</p>
+            </div>
+          ) : null}
+
+          {fundingStatus === "TIMEOUT" ? (
+            <div className="notice warning">
+              <strong>Funding is taking longer than expected</strong>
+              <p>The initial funding has not confirmed yet. Use Reload Wallet to refresh the balance.</p>
+            </div>
+          ) : null}
 
           {balanceSource ? (
             <div className="detailPanel">
