@@ -102,7 +102,7 @@ function getTransactionTarget(transaction) {
 
 function getPrimaryTimestampLabel(transaction) {
   if (transaction.status === "CONFIRMED" && transaction.confirmedAt) {
-    return "Confirmed";
+    return "Confirmed at";
   }
 
   return "Created";
@@ -118,7 +118,7 @@ function getTransactionAmount(transaction) {
   }
 
   if (transaction.type === "SYSTEM_FUNDING") {
-    return "Not recorded";
+    return "System funding";
   }
 
   return "-";
@@ -233,12 +233,6 @@ export default function TransactionHistory({ onBack }) {
                 <strong>{getPrimaryTimestampLabel(transaction)}:</strong>{" "}
                 {getPrimaryTimestampValue(transaction)}
               </p>
-
-              {transaction.confirmedAt ? (
-                <p className="listItemMeta">
-                  <strong>confirmedAt:</strong> {transaction.confirmedAt}
-                </p>
-              ) : null}
 
               {transaction.txHash ? (
                 <p className="listItemMeta">
