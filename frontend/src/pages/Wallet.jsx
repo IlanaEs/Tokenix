@@ -2,25 +2,22 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ethers } from "ethers";
 import {
   ApiError,
-  apiFetch,
-  fetchTransactions,
+  createWallet as createWalletRecord,
+  fetchWalletStatus,
   getErrorMessage,
+  retryWalletFunding,
 } from "../lib/api";
 import { clearToken } from "../lib/token";
 import { getWalletPrivateKey, storeWalletPrivateKey } from "../lib/walletKey";
 
 const LIVE_BALANCE_NOTICE =
-  "Balance is now loaded from the blockchain-backed wallet endpoint. If the Hardhat node, ABI sync, or contract runtime is unavailable, this request can still fail.";
+  "Readiness comes from the wallet status endpoint. Token and native balances are live blockchain observations and may be temporarily unavailable.";
 
 const MISSING_KEY_MESSAGE =
   "Your wallet exists, but this browser does not have the local signing key. For security reasons, transfers can only be signed from the browser where the wallet key is stored.";
 
-async function fetchBalance() {
-  return apiFetch("/wallet/balance");
-}
-
 export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onShowAdmin }) {
-  const [wallet, setWallet] = useState(null);
+  const [walletStatus, setWalletStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadingMessage, setLoadingMessage] = useState("Loading wallet...");
   const [error, setError] = useState("");
@@ -29,68 +26,49 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onSh
   const [importPrivateKey, setImportPrivateKey] = useState("");
   const [keyMessage, setKeyMessage] = useState("");
   const [keyError, setKeyError] = useState("");
-  // Funding (initial faucet mint) is asynchronous on the backend, so a freshly
-  // created wallet reads 0 until the mint confirms. Track its status to surface
-  // a clear PENDING/CONFIRMED/FAILED/TIMEOUT state instead of a confusing 0.
-  const [fundingStatus, setFundingStatus] = useState(null);
-
   // Run the auto-bootstrap exactly once (StrictMode double-invokes effects in
   // dev, which would otherwise fire two /wallet/create calls → a spurious 409).
   const didInitRef = useRef(false);
-  // Serialize overlapping loadWallet runs (auto-bootstrap vs. manual reload).
-  const inFlightRef = useRef(false);
-  // Lets an in-flight funding poll be cancelled on reload/unmount.
-  const pollAbortRef = useRef(false);
+  const requestSeqRef = useRef(0);
+  const pollTimerRef = useRef(null);
+  const abortControllerRef = useRef(null);
 
-  // Poll the backend until the initial faucet funding settles, converging the
-  // displayed balance live. The authoritative signal is the SYSTEM_FUNDING
-  // transaction row status; the balance re-read is the convergence mechanism.
-  const pollFundingUntilSettled = useCallback(async () => {
-    const MAX_ATTEMPTS = 15;
-    const INTERVAL_MS = 2000;
-
-    setFundingStatus("PENDING");
-
-    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
-      if (pollAbortRef.current) return;
-
-      try {
-        const fundingRows = await fetchTransactions("SYSTEM_FUNDING");
-        if (pollAbortRef.current) return;
-        const latest = fundingRows[0];
-
-        try {
-          const refreshed = await fetchBalance();
-          if (pollAbortRef.current) return;
-          setWallet(refreshed);
-          setHasLocalPrivateKey(Boolean(getWalletPrivateKey(refreshed.walletAddress)));
-        } catch {
-          // Transient balance read failures are non-fatal while polling.
-        }
-
-        if (latest?.status === "CONFIRMED") {
-          setFundingStatus("CONFIRMED");
-          return;
-        }
-        if (latest?.status === "FAILED") {
-          setFundingStatus("FAILED");
-          return;
-        }
-      } catch {
-        // Ignore transient errors and keep polling within the budget.
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, INTERVAL_MS));
+  function clearPollTimer() {
+    if (pollTimerRef.current) {
+      clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
     }
+  }
 
-    if (!pollAbortRef.current) {
-      setFundingStatus("TIMEOUT");
-    }
-  }, []);
+  function replaceAbortController() {
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    return controller;
+  }
+
+  function shouldPollStatus(status) {
+    return ["funding_pending", "blocked", "temporarily_unavailable"].includes(status?.lifecycleState);
+  }
+
+  function getPollDelayMs(status, pollCount) {
+    if (!shouldPollStatus(status)) return null;
+    if (pollCount < 10) return 1000;
+    if (pollCount < 30) return 3000;
+    return 10000;
+  }
+
+  function applyStatus(status) {
+    setWalletStatus(status);
+    const walletAddress = status?.wallet?.walletAddress || "";
+    setHasLocalPrivateKey(Boolean(walletAddress && getWalletPrivateKey(walletAddress)));
+  }
 
   const loadWallet = useCallback(async () => {
-    if (inFlightRef.current) return;
-    inFlightRef.current = true;
+    const requestSeq = requestSeqRef.current + 1;
+    requestSeqRef.current = requestSeq;
+    clearPollTimer();
+    replaceAbortController();
 
     setLoading(true);
     setLoadingMessage("Loading wallet...");
@@ -98,55 +76,50 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onSh
     setKeyMessage("");
     setKeyError("");
     setExportedPrivateKey("");
-    // Cancel any prior funding poll and clear stale funding UI for this load.
-    pollAbortRef.current = true;
-    setFundingStatus(null);
 
     try {
-      try {
-        const existing = await fetchBalance();
-        setWallet(existing);
-        setHasLocalPrivateKey(Boolean(getWalletPrivateKey(existing.walletAddress)));
-        return;
-      } catch (requestError) {
-        if (!(requestError instanceof ApiError) || requestError.status !== 404) {
-          throw requestError;
+      let status = await fetchWalletStatus({ signal: controller.signal });
+      if (requestSeq !== requestSeqRef.current) return;
+
+      if (status.lifecycleState === "wallet_missing") {
+        setLoadingMessage("Creating wallet...");
+        const generatedWallet = ethers.Wallet.createRandom();
+        const publicKey = generatedWallet.signingKey.publicKey;
+        const walletAddress = ethers.computeAddress(publicKey);
+
+        status = await createWalletRecord({ walletAddress, publicKey });
+        if (requestSeq !== requestSeqRef.current) return;
+        if (
+          status.wallet?.walletAddress &&
+          ethers.getAddress(status.wallet.walletAddress) === ethers.getAddress(walletAddress)
+        ) {
+          storeWalletPrivateKey(walletAddress, generatedWallet.privateKey);
         }
       }
 
-      setLoadingMessage("Creating wallet...");
-      const generatedWallet = ethers.Wallet.createRandom();
-      const publicKey = generatedWallet.signingKey.publicKey;
-      const walletAddress = ethers.computeAddress(publicKey);
-      let createdNewWallet = false;
+      applyStatus(status);
 
-      try {
-        await apiFetch("/wallet/create", {
-          method: "POST",
-          body: JSON.stringify({ walletAddress, publicKey }),
-        });
-        createdNewWallet = true;
-      } catch (requestError) {
-        if (!(requestError instanceof ApiError) || requestError.status !== 409) {
-          throw requestError;
-        }
-      }
+      let pollCount = 0;
+      const schedulePoll = (latestStatus) => {
+        const delay = getPollDelayMs(latestStatus, pollCount);
+        if (delay == null) return;
 
-      if (createdNewWallet) {
-        storeWalletPrivateKey(walletAddress, generatedWallet.privateKey);
-      }
+        pollTimerRef.current = setTimeout(async () => {
+          pollCount += 1;
+          try {
+            const pollController = replaceAbortController();
+            const refreshed = await fetchWalletStatus({ signal: pollController.signal });
+            if (requestSeq !== requestSeqRef.current) return;
+            applyStatus(refreshed);
+            schedulePoll(refreshed);
+          } catch {
+            if (requestSeq !== requestSeqRef.current) return;
+            schedulePoll(latestStatus);
+          }
+        }, delay);
+      };
 
-      setLoadingMessage("Loading wallet...");
-      const created = await fetchBalance();
-      setWallet(created);
-      setHasLocalPrivateKey(Boolean(getWalletPrivateKey(created.walletAddress)));
-
-      // Only a brand-new wallet triggers background faucet funding; poll until
-      // it settles so the balance converges from 0 → 100 with visible status.
-      if (createdNewWallet) {
-        pollAbortRef.current = false;
-        void pollFundingUntilSettled();
-      }
+      schedulePoll(status);
     } catch (requestError) {
       if (
         requestError instanceof ApiError &&
@@ -157,14 +130,47 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onSh
         return;
       }
 
-      setWallet(null);
+      setWalletStatus(null);
       setHasLocalPrivateKey(false);
       setError(getErrorMessage(requestError, "Failed to load wallet."));
     } finally {
-      inFlightRef.current = false;
-      setLoading(false);
+      if (requestSeq === requestSeqRef.current) {
+        setLoading(false);
+      }
     }
-  }, [onLogout, pollFundingUntilSettled]);
+  }, [onLogout]);
+
+  async function handleRetryFunding() {
+    const requestSeq = requestSeqRef.current + 1;
+    requestSeqRef.current = requestSeq;
+    clearPollTimer();
+    const controller = replaceAbortController();
+    setLoading(true);
+    setLoadingMessage("Retrying funding...");
+    setError("");
+
+    try {
+      const status = await retryWalletFunding();
+      if (requestSeq !== requestSeqRef.current) return;
+      applyStatus(status);
+    } catch (requestError) {
+      if (
+        requestError instanceof ApiError &&
+        (requestError.status === 401 || requestError.status === 403)
+      ) {
+        clearToken();
+        onLogout?.();
+        return;
+      }
+
+      setError(getErrorMessage(requestError, "Funding retry could not be started."));
+    } finally {
+      if (requestSeq === requestSeqRef.current) {
+        setLoading(false);
+        void loadWallet();
+      }
+    }
+  }
 
   useEffect(() => {
     if (didInitRef.current) return;
@@ -175,14 +181,20 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onSh
   // Stop any in-flight funding poll when the component unmounts.
   useEffect(
     () => () => {
-      pollAbortRef.current = true;
+      requestSeqRef.current += 1;
+      abortControllerRef.current?.abort();
+      clearPollTimer();
     },
     []
   );
 
-  const walletAddress = wallet?.walletAddress || "";
-  const balance = wallet?.balance ?? "";
-  const balanceSource = wallet?.source || "";
+  const walletAddress = walletStatus?.wallet?.walletAddress || "";
+  const tokenBalance = walletStatus?.currentTokenBalance;
+  const nativeBalance = walletStatus?.currentNativeBalance;
+  const lifecycleState = walletStatus?.lifecycleState || "";
+  const fundingReady = Boolean(walletStatus?.fundingReady);
+  const blockchainAvailable = Boolean(walletStatus?.blockchainAvailable);
+  const showFinalBalance = fundingReady && blockchainAvailable && tokenBalance;
   const isMissingLocalKey = Boolean(walletAddress) && !hasLocalPrivateKey;
 
   function handleRevealPrivateKey() {
@@ -269,7 +281,7 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onSh
       <div>
         <h2>Wallet</h2>
         <p className="helperText">
-          Wallet setup is connected, and the balance shown here comes from the authenticated blockchain read path.
+          Wallet setup is connected, and readiness is tracked separately from live blockchain balances.
         </p>
       </div>
 
@@ -287,7 +299,7 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onSh
         </div>
       ) : null}
 
-      {!loading && wallet ? (
+      {!loading && walletStatus?.wallet ? (
         <>
           <div className="detailPanel">
             <div className="detailLabel">Wallet address</div>
@@ -295,49 +307,68 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onSh
           </div>
 
           <div className="detailPanel">
-            <div className="detailLabel">Balance</div>
+            <div className="detailLabel">Token balance</div>
             <div>
-              <span className="big">{balance || "0"}</span>
+              <span className="big">
+                {showFinalBalance ? tokenBalance.display || tokenBalance.raw : "Pending"}
+              </span>
             </div>
           </div>
 
-          {fundingStatus === "PENDING" ? (
+          {nativeBalance ? (
+            <div className="detailPanel">
+              <div className="detailLabel">Native gas balance</div>
+              <div>{nativeBalance.display || nativeBalance.raw}</div>
+            </div>
+          ) : null}
+
+          {lifecycleState === "funding_pending" || lifecycleState === "blocked" ? (
             <div className="notice info">
               <strong>Funding in progress</strong>
-              <p>Your initial 100 tokens are being minted on-chain. This usually takes a few seconds.</p>
+              <p>Your wallet is being initialized. Transfers stay disabled until gas funding and token funding are finalized.</p>
             </div>
           ) : null}
 
-          {fundingStatus === "CONFIRMED" ? (
+          {lifecycleState === "ready" && blockchainAvailable ? (
             <div className="notice info">
               <strong>Funding complete</strong>
-              <p>Your wallet has been funded and the balance is up to date.</p>
+              <p>Your wallet is initialized and live balances are available.</p>
             </div>
           ) : null}
 
-          {fundingStatus === "FAILED" ? (
+          {lifecycleState === "ready" && !blockchainAvailable ? (
+            <div className="notice warning">
+              <strong>Live balances unavailable</strong>
+              <p>Your wallet remains initialized, but live balances are temporarily unavailable.</p>
+            </div>
+          ) : null}
+
+          {lifecycleState === "funding_failed" ? (
             <div className="notice error">
               <strong>Funding failed</strong>
-              <p>The initial funding transaction did not complete. Use Reload Wallet to retry checking the balance.</p>
+              <p>The initial funding transaction did not complete.</p>
+              <button type="button" className="btn" onClick={() => void handleRetryFunding()} disabled={loading}>
+                Retry Funding
+              </button>
             </div>
           ) : null}
 
-          {fundingStatus === "TIMEOUT" ? (
+          {lifecycleState === "legacy_unverified" ? (
             <div className="notice warning">
-              <strong>Funding is taking longer than expected</strong>
-              <p>The initial funding has not confirmed yet. Use Reload Wallet to refresh the balance.</p>
+              <strong>Funding status needs verification</strong>
+              <p>This wallet predates the funding readiness records, so transfers stay disabled until funding is verified.</p>
             </div>
           ) : null}
 
-          {balanceSource ? (
-            <div className="detailPanel">
-              <div className="detailLabel">Source</div>
-              <div>{balanceSource}</div>
+          {lifecycleState === "needs_manual_review" ? (
+            <div className="notice warning">
+              <strong>Funding needs review</strong>
+              <p>The funding worker found an ambiguous chain state and stopped before taking unsafe action.</p>
             </div>
           ) : null}
 
           <div className="notice info">
-            <strong>Balance sourced from blockchain</strong>
+            <strong>Balances sourced from blockchain</strong>
             <p>{LIVE_BALANCE_NOTICE}</p>
           </div>
 
@@ -426,7 +457,7 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onSh
         </>
       ) : null}
 
-      {!loading && !wallet && !error ? (
+      {!loading && !walletStatus?.wallet && !error ? (
         <div className="emptyState">
           Wallet information is not available yet. Try reloading to bootstrap the wallet again.
         </div>
@@ -446,7 +477,7 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onSh
           type="button"
           className="btn"
           onClick={onShowHistory}
-          disabled={loading || !wallet}
+          disabled={loading || !walletStatus?.wallet}
         >
           History
         </button>
@@ -455,7 +486,7 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onSh
           type="button"
           className="btn"
           onClick={onShowAdmin}
-          disabled={loading || !wallet}
+          disabled={loading || !walletStatus?.wallet}
         >
           Admin
         </button>
@@ -464,7 +495,7 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onSh
           type="button"
           className="btn"
           onClick={onShowSendTokens}
-          disabled={loading || !wallet || !hasLocalPrivateKey}
+          disabled={loading || !walletStatus?.wallet || !fundingReady || !blockchainAvailable || !hasLocalPrivateKey}
         >
           Send Tokens
         </button>
