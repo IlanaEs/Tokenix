@@ -76,3 +76,56 @@ test("getWalletStatus is read-only and preserves fundingReady during balance out
     "status lookup must not mutate database rows"
   );
 });
+
+test("getWalletStatus hides stale phase error codes after confirmed funding", async (t) => {
+  restore(t);
+
+  pool.query = async (sql, params = []) => {
+    assert.deepEqual(params, [43]);
+    return {
+      rows: [
+        {
+          userId: 43,
+          walletAddress: "0x2222222222222222222222222222222222222222",
+          publicKey: "0xpub",
+          fundingJobId: 8,
+          lifecycleState: "ready",
+          fundingReady: true,
+          confirmationTarget: 1,
+          tokenRequestId: "0xdef",
+          chainId: 31337,
+          chainEpochId: "epoch-1",
+          gasStatus: "confirmed",
+          gasTxHash: "0xgas",
+          gasConfirmations: 1,
+          gasConfirmedAt: "2026-06-25T10:00:00.000Z",
+          gasErrorCode: "BLOCKCHAIN_UNAVAILABLE",
+          tokenStatus: "confirmed",
+          tokenTxHash: "0xtoken",
+          tokenConfirmations: 1,
+          tokenConfirmedAt: "2026-06-25T10:00:01.000Z",
+          tokenTransferEventValidated: true,
+          tokenErrorCode: "BLOCKCHAIN_UNAVAILABLE",
+        },
+      ],
+    };
+  };
+
+  BlockchainClient.prototype.getTokenBalanceRaw = async () => ({
+    raw: "100000000000000000000",
+    decimals: 18,
+    display: "100.0",
+  });
+  BlockchainClient.prototype.getNativeBalanceRaw = async () => ({
+    raw: "5000000000000000",
+    decimals: 18,
+    display: "0.005",
+  });
+
+  const status = await getWalletStatus(43);
+
+  assert.equal(status.lifecycleState, "ready");
+  assert.equal(status.fundingReady, true);
+  assert.equal(status.funding.gas.errorCode, null);
+  assert.equal(status.funding.token.errorCode, null);
+});

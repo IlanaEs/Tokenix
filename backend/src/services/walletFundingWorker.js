@@ -345,8 +345,8 @@ async function finalizePhaseIfReady(job, phase, txHash) {
   }
 
   const fields = phase === "gas"
-    ? "gas_status = 'confirmed', gas_confirmations = $2, gas_confirmed_at = NOW()"
-    : "token_status = 'confirmed', token_confirmations = $2, token_confirmed_at = NOW(), token_transfer_event_validated = TRUE";
+    ? "gas_status = 'confirmed', gas_confirmations = $2, gas_confirmed_at = NOW(), gas_error_code = NULL"
+    : "token_status = 'confirmed', token_confirmations = $2, token_confirmed_at = NOW(), token_transfer_event_validated = TRUE, token_error_code = NULL";
 
   await pool.query(
     `
@@ -419,6 +419,13 @@ async function processPhase(job, phase) {
   if (!outbox) {
     await markJobError(job, phase, FUNDING_PHASE_STATUSES.BLOCKED, "OUTBOX_MISSING");
     return false;
+  }
+
+  if ([FUNDING_PHASE_STATUSES.BROADCAST, FUNDING_PHASE_STATUSES.PENDING].includes(status)) {
+    const finalized = await finalizePhaseIfReady(job, phase, txHash || outbox.txHash);
+    if (finalized) {
+      return true;
+    }
   }
 
   if ([FUNDING_PHASE_STATUSES.SIGNED, FUNDING_PHASE_STATUSES.BROADCAST, FUNDING_PHASE_STATUSES.PENDING, FUNDING_PHASE_STATUSES.NOT_STARTED].includes(status)) {

@@ -95,7 +95,7 @@ function toFundingShape(job) {
       txHash: job.gasTxHash || null,
       confirmationsPersisted: Number(job.gasConfirmations || 0),
       confirmedAt: job.gasConfirmedAt || null,
-      errorCode: job.gasErrorCode || null,
+      errorCode: job.gasStatus === FUNDING_PHASE_STATUSES.CONFIRMED ? null : job.gasErrorCode || null,
     },
     token: {
       status: job.tokenStatus,
@@ -104,7 +104,7 @@ function toFundingShape(job) {
       confirmedAt: job.tokenConfirmedAt || null,
       transferEventValidated: Boolean(job.tokenTransferEventValidated),
       requestId: job.tokenRequestId,
-      errorCode: job.tokenErrorCode || null,
+      errorCode: job.tokenStatus === FUNDING_PHASE_STATUSES.CONFIRMED ? null : job.tokenErrorCode || null,
     },
   };
 }
