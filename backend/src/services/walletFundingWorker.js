@@ -87,8 +87,9 @@ async function markJobError(job, phase, status, errorCode) {
         updated_at = NOW()
     WHERE funding_job_id = $1
       AND locked_by = $4
+      AND version = $5
     `,
-    [job.funding_job_id, status, errorCode, WORKER_ID]
+    [job.funding_job_id, status, errorCode, WORKER_ID, job.version]
   );
 }
 
@@ -102,8 +103,9 @@ async function releaseJob(job, retryDelaySeconds = 5) {
         updated_at = NOW()
     WHERE funding_job_id = $1
       AND locked_by = $3
+      AND version = $4
     `,
-    [job.funding_job_id, String(retryDelaySeconds), WORKER_ID]
+    [job.funding_job_id, String(retryDelaySeconds), WORKER_ID, job.version]
   );
 }
 
@@ -257,8 +259,9 @@ async function setPhaseSigned(job, phase, signed) {
         updated_at = NOW()
     WHERE funding_job_id = $1
       AND locked_by = $7
+      AND version = $8
     `,
-    [job.funding_job_id, signed.txHash, signed.nonce, signed.signerAddress, signed.chainId, job.chain_epoch_id, WORKER_ID]
+    [job.funding_job_id, signed.txHash, signed.nonce, signed.signerAddress, signed.chainId, job.chain_epoch_id, WORKER_ID, job.version]
   );
 }
 
@@ -294,8 +297,9 @@ async function broadcastOutbox(job, phase, outbox) {
         updated_at = NOW()
     WHERE funding_job_id = $1
       AND locked_by = $2
+      AND version = $3
     `,
-    [job.funding_job_id, WORKER_ID]
+    [job.funding_job_id, WORKER_ID, job.version]
   );
 
   return true;
@@ -314,8 +318,9 @@ async function finalizePhaseIfReady(job, phase, txHash) {
           updated_at = NOW()
       WHERE funding_job_id = $1
         AND locked_by = $3
+        AND version = $4
       `,
-      [job.funding_job_id, confirmations, WORKER_ID]
+      [job.funding_job_id, confirmations, WORKER_ID, job.version]
     );
     return false;
   }
@@ -353,8 +358,9 @@ async function finalizePhaseIfReady(job, phase, txHash) {
         updated_at = NOW()
     WHERE funding_job_id = $1
       AND locked_by = $3
+      AND version = $5
     `,
-    [job.funding_job_id, confirmations, WORKER_ID, phase]
+    [job.funding_job_id, confirmations, WORKER_ID, phase, job.version]
   );
 
   await pool.query(
@@ -447,8 +453,9 @@ async function processJob(job) {
           updated_at = NOW()
       WHERE funding_job_id = $1
         AND locked_by = $2
+        AND version = $3
       `,
-      [job.funding_job_id, WORKER_ID]
+      [job.funding_job_id, WORKER_ID, job.version]
     );
   } catch (error) {
     const phase = job.gas_status !== FUNDING_PHASE_STATUSES.CONFIRMED ? "gas" : "token";
