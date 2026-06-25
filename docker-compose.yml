@@ -18,6 +18,9 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/tokenix
       RPC_URL: http://hardhat:8545
       CONTRACT_ADDRESS: 0x5FbDB2315678afecb367f032d93F642f64180aa3
+      FAUCET_CONTRACT_ADDRESS: ""
+      WALLET_FUNDING_WORKER_ENABLED: "false"
+      TX_CONFIRMATIONS_REQUIRED: "1"
       JWT_SECRET: super_secret_change_me
       PORT: 3000
     ports:

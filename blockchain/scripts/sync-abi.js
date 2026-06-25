@@ -5,31 +5,44 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const ABI_SOURCE = path.join(__dirname, '../artifacts/contracts/Token.sol/MyToken.json');
+const CONTRACTS = [
+  {
+    fileName: 'MyToken.json',
+    artifactPath: path.join(__dirname, '../artifacts/contracts/Token.sol/MyToken.json'),
+    addressKeys: ['TokenModule#MyToken'],
+  },
+  {
+    fileName: 'GuardedFaucet.json',
+    artifactPath: path.join(__dirname, '../artifacts/contracts/GuardedFaucet.sol/GuardedFaucet.json'),
+    addressKeys: ['TokenModule#GuardedFaucet'],
+  },
+];
+const EPOCH_FILE_NAME = 'DeploymentEpoch.json';
 const DEPLOYMENTS_DIR = path.join(__dirname, '../ignition/deployments');
 
 const TARGET_DIRS = [
   path.join(__dirname, '../../backend/src/abi/'),
   path.join(__dirname, '../../frontend/src/abi/')
 ];
-const FILE_NAME = 'MyToken.json';
 
 function sync() {
   try {
     console.log("🧹 Starting cleanup: Removing old ABI files...");
 
     TARGET_DIRS.forEach(targetDir => {
-      const fullPath = path.join(targetDir, FILE_NAME);
-      if (fs.existsSync(fullPath)) {
-        fs.unlinkSync(fullPath);
-        console.log(`   - Deleted old file: ${fullPath}`);
+      CONTRACTS.forEach(contract => {
+        const fullPath = path.join(targetDir, contract.fileName);
+        if (fs.existsSync(fullPath)) {
+          fs.unlinkSync(fullPath);
+          console.log(`   - Deleted old file: ${fullPath}`);
+        }
+      });
+      const epochPath = path.join(targetDir, EPOCH_FILE_NAME);
+      if (fs.existsSync(epochPath)) {
+        fs.unlinkSync(epochPath);
+        console.log(`   - Deleted old file: ${epochPath}`);
       }
     });
-
-    if (!fs.existsSync(ABI_SOURCE)) throw new Error(`ABI artifact not found at ${ABI_SOURCE}`);
-    const abiArtifact = JSON.parse(fs.readFileSync(ABI_SOURCE, 'utf8'));
-    const abi = abiArtifact.abi;
-    if (!abi) throw new Error('ABI array not found in artifact');
 
     if (!fs.existsSync(DEPLOYMENTS_DIR)) throw new Error(`Deployments directory not found: ${DEPLOYMENTS_DIR}`);
     
@@ -49,26 +62,54 @@ function sync() {
     if (!fs.existsSync(ADDRESS_SOURCE)) throw new Error(`deployed_addresses.json not found in ${latestFolder}`);
     
     const addresses = JSON.parse(fs.readFileSync(ADDRESS_SOURCE, 'utf8'));
-    
-    const contractAddress = addresses['TokenModule#MyToken'] || Object.values(addresses)[0];
-    
-    if (!contractAddress) throw new Error('Contract address not found in deployed_addresses.json');
-
-    const output = {
-      address: contractAddress,
-      abi: abi
+    const epoch = {
+      deploymentFolder: latestFolder,
+      deploymentMarker: `${latestFolder}:${fs.statSync(ADDRESS_SOURCE).mtimeMs}`,
+      chainEpochId: `${latestFolder}:${fs.statSync(ADDRESS_SOURCE).mtimeMs}`,
+      syncedAt: new Date().toISOString(),
     };
+
+    CONTRACTS.forEach(contract => {
+      if (!fs.existsSync(contract.artifactPath)) {
+        throw new Error(`ABI artifact not found at ${contract.artifactPath}`);
+      }
+
+      const abiArtifact = JSON.parse(fs.readFileSync(contract.artifactPath, 'utf8'));
+      const abi = abiArtifact.abi;
+      if (!abi) throw new Error(`ABI array not found in ${contract.artifactPath}`);
+
+      const contractAddress = contract.addressKeys
+        .map(key => addresses[key])
+        .find(Boolean);
+
+      if (!contractAddress) {
+        throw new Error(`${contract.fileName} address not found in deployed_addresses.json`);
+      }
+
+      const output = {
+        address: contractAddress,
+        abi,
+      };
+
+      TARGET_DIRS.forEach(targetDir => {
+        if (!fs.existsSync(targetDir)) {
+          fs.mkdirSync(targetDir, { recursive: true });
+        }
+        const outPath = path.join(targetDir, contract.fileName);
+        fs.writeFileSync(outPath, JSON.stringify(output, null, 2));
+      });
+
+      console.log(`📍 ${contract.fileName}: ${contractAddress}`);
+    });
 
     TARGET_DIRS.forEach(targetDir => {
       if (!fs.existsSync(targetDir)) {
         fs.mkdirSync(targetDir, { recursive: true });
       }
-      const outPath = path.join(targetDir, FILE_NAME);
-      fs.writeFileSync(outPath, JSON.stringify(output, null, 2));
+      fs.writeFileSync(path.join(targetDir, EPOCH_FILE_NAME), JSON.stringify(epoch, null, 2));
     });
 
     console.log(`\n✅ Sync Complete!`);
-    console.log(`📍 Contract: ${contractAddress}`);
     console.log(`🚀 Deployment: ${latestFolder}`);
     console.log(`📂 Copied to: ${TARGET_DIRS.join(', ')}`);
 
