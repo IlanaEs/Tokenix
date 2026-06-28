@@ -68,7 +68,7 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onSh
     const requestSeq = requestSeqRef.current + 1;
     requestSeqRef.current = requestSeq;
     clearPollTimer();
-    replaceAbortController();
+    const controller = replaceAbortController();
 
     setLoading(true);
     setLoadingMessage("Loading wallet...");
