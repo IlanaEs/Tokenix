@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import BlockchainClient from "./BlockchainClient.js";
-import { getWalletStatus } from "./walletFundingService.js";
+import { enqueueFundingRetry, getWalletStatus } from "./walletFundingService.js";
 import { pool } from "../db.js";
 
 const originalQuery = pool.query.bind(pool);
@@ -128,4 +128,84 @@ test("getWalletStatus hides stale phase error codes after confirmed funding", as
   assert.equal(status.fundingReady, true);
   assert.equal(status.funding.gas.errorCode, null);
   assert.equal(status.funding.token.errorCode, null);
+});
+
+test("enqueueFundingRetry preserves confirmed gas funding and retries only token funding", async (t) => {
+  restore(t);
+  let retrySql = "";
+  let callCount = 0;
+
+  pool.query = async (sql, params = []) => {
+    callCount += 1;
+    if (callCount === 1) {
+      retrySql = String(sql);
+      assert.deepEqual(params, [44]);
+      return { rows: [{ funding_job_id: 9 }] };
+    }
+
+    assert.deepEqual(params, [44]);
+    return {
+      rows: [
+        {
+          userId: 44,
+          walletAddress: "0x3333333333333333333333333333333333333333",
+          publicKey: "0xpub",
+          fundingJobId: 9,
+          lifecycleState: "funding_pending",
+          fundingReady: false,
+          confirmationTarget: 1,
+          tokenRequestId: "0xretry",
+          chainId: 31337,
+          chainEpochId: "epoch-1",
+          gasStatus: "confirmed",
+          gasTxHash: "0xgas",
+          gasConfirmations: 1,
+          gasConfirmedAt: "2026-06-25T10:00:00.000Z",
+          gasErrorCode: null,
+          tokenStatus: "not_started",
+          tokenTxHash: "0xtoken",
+          tokenConfirmations: 0,
+          tokenConfirmedAt: null,
+          tokenTransferEventValidated: false,
+          tokenErrorCode: null,
+        },
+      ],
+    };
+  };
+
+  BlockchainClient.prototype.getTokenBalanceRaw = async () => ({
+    raw: "0",
+    decimals: 18,
+    display: "0.0",
+  });
+  BlockchainClient.prototype.getNativeBalanceRaw = async () => ({
+    raw: "5000000000000000",
+    decimals: 18,
+    display: "0.005",
+  });
+
+  const status = await enqueueFundingRetry(44);
+
+  assert.match(retrySql, /WHEN funding_ready = TRUE OR gas_status = 'confirmed' THEN gas_status/);
+  assert.match(retrySql, /WHEN gas_status = 'confirmed' THEN 'not_started'/);
+  assert.equal(status.funding.gas.status, "confirmed");
+  assert.equal(status.funding.token.status, "not_started");
+});
+
+test("enqueueFundingRetry cannot downgrade finalized readiness", async (t) => {
+  restore(t);
+  let retrySql = "";
+
+  pool.query = async (sql, params = []) => {
+    retrySql = String(sql);
+    assert.deepEqual(params, [45]);
+    return { rows: [] };
+  };
+
+  await assert.rejects(
+    () => enqueueFundingRetry(45),
+    (error) => error.status === 409 && error.publicCode === "FUNDING_RETRY_NOT_ALLOWED"
+  );
+
+  assert.match(retrySql, /WHERE user_id = \$1\s+AND funding_ready = FALSE/);
 });

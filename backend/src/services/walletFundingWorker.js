@@ -39,6 +39,9 @@ function safeWorkerErrorCode(error, fallback = "BLOCKCHAIN_UNAVAILABLE") {
   if (error?.code === "TOKEN_FUNDING_REVERTED") {
     return "TOKEN_FUNDING_REVERTED";
   }
+  if (error?.code === "NONCE_GAP_DETECTED") {
+    return "NONCE_GAP_DETECTED";
+  }
   return fallback;
 }
 
@@ -124,6 +127,13 @@ async function initializeNonceReservation({ signerAddress, chainId, chainEpochId
   );
 
   const nextNonce = Math.max(providerNonce, Number(rows[0]?.nextPersistedNonce || providerNonce));
+  const nextPersistedNonce = Number(rows[0]?.nextPersistedNonce || providerNonce);
+
+  if (providerNonce > nextPersistedNonce) {
+    const error = new Error("Provider pending nonce is ahead of persisted outbox nonce");
+    error.code = "NONCE_GAP_DETECTED";
+    throw error;
+  }
 
   await pool.query(
     `
@@ -429,7 +439,10 @@ async function processPhase(job, phase) {
   }
 
   if ([FUNDING_PHASE_STATUSES.SIGNED, FUNDING_PHASE_STATUSES.BROADCAST, FUNDING_PHASE_STATUSES.PENDING, FUNDING_PHASE_STATUSES.NOT_STARTED].includes(status)) {
-    await broadcastOutbox(job, phase, outbox);
+    const broadcasted = await broadcastOutbox(job, phase, outbox);
+    if (!broadcasted) {
+      return false;
+    }
   }
 
   return finalizePhaseIfReady(job, phase, txHash || outbox.txHash);
@@ -466,7 +479,10 @@ async function processJob(job) {
     );
   } catch (error) {
     const phase = job.gas_status !== FUNDING_PHASE_STATUSES.CONFIRMED ? "gas" : "token";
-    await markJobError(job, phase, FUNDING_PHASE_STATUSES.BLOCKED, safeWorkerErrorCode(error));
+    const status = error?.code === "NONCE_GAP_DETECTED"
+      ? FUNDING_PHASE_STATUSES.NEEDS_MANUAL_REVIEW
+      : FUNDING_PHASE_STATUSES.BLOCKED;
+    await markJobError(job, phase, status, safeWorkerErrorCode(error));
   }
 }
 
@@ -505,3 +521,10 @@ export function stopWalletFundingWorker() {
     timer = null;
   }
 }
+
+export const __test = {
+  acquireJob,
+  blockchainClient,
+  initializeNonceReservation,
+  processJob,
+};
