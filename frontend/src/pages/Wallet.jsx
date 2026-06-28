@@ -34,8 +34,9 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onSh
   const [showBackupPrompt, setShowBackupPrompt] = useState(false);
   const [keyMessage, setKeyMessage] = useState("");
   const [keyError, setKeyError] = useState("");
-  // Run the auto-bootstrap exactly once (StrictMode double-invokes effects in
-  // dev, which would otherwise fire two /wallet/create calls → a spurious 409).
+  // Run the auto-bootstrap once per mount. Guards against StrictMode firing two
+  // concurrent /wallet/create calls on a single mount; it is reset on unmount so
+  // the dev remount re-runs the bootstrap after the first load is aborted.
   const didInitRef = useRef(false);
   const requestSeqRef = useRef(0);
   const pollTimerRef = useRef(null);
@@ -131,6 +132,11 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onSh
 
       schedulePoll(status);
     } catch (requestError) {
+      // A superseded or aborted request (e.g. React StrictMode's dev
+      // mount/remount, or a newer reload) must not clobber the UI with a
+      // fatal error. Genuine failures keep the same requestSeq and fall through.
+      if (requestSeq !== requestSeqRef.current) return;
+
       if (
         requestError instanceof ApiError &&
         (requestError.status === 401 || requestError.status === 403)
@@ -188,12 +194,17 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onSh
     void loadWallet();
   }, [loadWallet]);
 
-  // Stop any in-flight funding poll when the component unmounts.
+  // On unmount, invalidate any in-flight request and stop polling. Resetting
+  // didInitRef lets React StrictMode's dev remount re-run the bootstrap, so the
+  // aborted first load is retried instead of leaving the wallet stuck on a
+  // spurious "Unable to reach the API server" error. The first load is aborted
+  // mid status-fetch (before /wallet/create), so this does not double-create.
   useEffect(
     () => () => {
       requestSeqRef.current += 1;
       abortControllerRef.current?.abort();
       clearPollTimer();
+      didInitRef.current = false;
     },
     []
   );
