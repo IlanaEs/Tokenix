@@ -13,6 +13,50 @@ export type WalletBalance = {
   source?: string;
 };
 
+export type BaseUnitBalance = {
+  raw: string;
+  decimals: number;
+  display?: string;
+  fetchedAt?: string;
+};
+
+export type WalletFundingStatus = {
+  status: string;
+  txHash: string | null;
+  confirmationsPersisted?: number;
+  confirmedAt?: string | null;
+  errorCode?: string | null;
+  transferEventValidated?: boolean;
+  requestId?: string;
+};
+
+export type WalletStatusResponse = {
+  lifecycleState:
+    | "wallet_missing"
+    | "creating_wallet"
+    | "funding_pending"
+    | "ready"
+    | "funding_failed"
+    | "legacy_unverified"
+    | "temporarily_unavailable"
+    | "needs_manual_review"
+    | "blocked";
+  fundingReady: boolean;
+  blockchainAvailable: boolean;
+  wallet: { walletAddress: string } | null;
+  currentTokenBalance: BaseUnitBalance | null;
+  currentNativeBalance: BaseUnitBalance | null;
+  funding: {
+    confirmationTarget: number;
+    chainId?: number | null;
+    chainEpochId?: string | null;
+    gas: WalletFundingStatus;
+    token: WalletFundingStatus;
+  } | null;
+  observations?: unknown;
+  errors: Array<{ code: string; message: string }>;
+};
+
 export type CreateWalletResponse = {
   userId: number | string;
   walletAddress: string;
@@ -241,6 +285,27 @@ export async function transferTokens(
   return apiFetch<TransferResponse>("/transactions/transfer", {
     method: "POST",
     body: JSON.stringify(request),
+  });
+}
+
+export async function fetchWalletStatus(
+  options: RequestInit = {}
+): Promise<WalletStatusResponse> {
+  return apiFetch<WalletStatusResponse>("/wallet/status", options);
+}
+
+export async function createWallet(
+  request: { walletAddress: string; publicKey: string }
+): Promise<WalletStatusResponse> {
+  return apiFetch<WalletStatusResponse>("/wallet/create", {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
+}
+
+export async function retryWalletFunding(): Promise<WalletStatusResponse> {
+  return apiFetch<WalletStatusResponse>("/wallet/funding/retry", {
+    method: "POST",
   });
 }
 

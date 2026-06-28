@@ -1,6 +1,11 @@
 import { pool } from "../db.js";
 import BlockchainClient from "./BlockchainClient.js";
 import { TRANSACTION_TYPES } from "./transactionService.js";
+import {
+  createFundingJobInTransaction,
+  getWalletStatus,
+  prepareFundingJobSeed,
+} from "./walletFundingService.js";
 
 const blockchainClient = new BlockchainClient();
 
@@ -110,36 +115,62 @@ async function _fundAndLogWallet(userId, walletAddress) {
 }
 
 export async function createWallet({ userId, walletAddress, publicKey }) {
-  const q = `
-    INSERT INTO wallets (user_id, wallet_address, public_key)
-    VALUES ($1, $2, $3)
-    RETURNING user_id AS "userId",
-              wallet_address AS "walletAddress",
-              public_key AS "publicKey"
-  `;
-  const values = [userId, walletAddress, publicKey];
+  const client = await pool.connect();
 
   try {
-    const { rows } = await pool.query(q, values);
-    const created = rows[0];
+    await client.query("BEGIN");
 
-    // Funding is intentionally fire-and-forget: wallet creation succeeds and
-    // returns immediately regardless of funding outcome. A funding failure is
-    // non-fatal here, so the .catch only logs the error and never rejects back
-    // into the create flow.
-    _fundAndLogWallet(created.userId, created.walletAddress).catch((err) => {
-      console.error("Background funding task error:", err);
+    const inserted = await client.query(
+      `
+      INSERT INTO wallets (user_id, wallet_address, public_key)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (user_id) DO NOTHING
+      RETURNING user_id AS "userId",
+                wallet_address AS "walletAddress",
+                public_key AS "publicKey"
+      `,
+      [userId, walletAddress, publicKey]
+    );
+
+    let created = inserted.rows[0] || null;
+
+    if (!created) {
+      const existing = await client.query(
+        `
+        SELECT user_id AS "userId",
+               wallet_address AS "walletAddress",
+               public_key AS "publicKey"
+        FROM wallets
+        WHERE user_id = $1
+        LIMIT 1
+        `,
+        [userId]
+      );
+      created = existing.rows[0];
+    }
+
+    const fundingSeed = await prepareFundingJobSeed({
+      userId: created.userId,
+      walletAddress: created.walletAddress,
     });
 
-    return created;
+    await createFundingJobInTransaction(client, {
+      userId: created.userId,
+      walletAddress: created.walletAddress,
+      seed: fundingSeed,
+    });
+
+    await client.query("COMMIT");
+
+    return {
+      created: Boolean(inserted.rows[0]),
+      status: await getWalletStatus(userId),
+    };
   } catch (e) {
-    if (e.code === "23505") {
-      const error = new Error("Wallet already exists");
-      error.status = 409;
-      error.statusCode = 409;
-      throw error;
-    }
+    await client.query("ROLLBACK");
     throw e;
+  } finally {
+    client.release();
   }
 }
 

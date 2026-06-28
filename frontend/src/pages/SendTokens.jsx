@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ethers } from "ethers";
-import { apiFetch, getErrorMessage, transferTokens } from "../lib/api";
+import { fetchWalletStatus, getErrorMessage, transferTokens } from "../lib/api";
 import { getWalletPrivateKey } from "../lib/walletKey";
 import tokenArtifact from "../abi/MyToken.json";
 
@@ -27,16 +27,15 @@ function validateAmount(value) {
     return "Use numbers only, for example 1 or 0.25.";
   }
 
-  const parsedAmount = Number(value);
-  if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+  try {
+    if (ethers.parseUnits(value, 18) <= 0n) {
+      return "Amount must be greater than 0.";
+    }
+  } catch {
     return "Amount must be greater than 0.";
   }
 
   return "";
-}
-
-async function fetchBalance() {
-  return apiFetch("/wallet/balance");
 }
 
 async function broadcastTokenTransfer({ privateKey, toAddress, amount }) {
@@ -46,6 +45,22 @@ async function broadcastTokenTransfer({ privateKey, toAddress, amount }) {
   const value = ethers.parseUnits(String(amount), 18);
   const tx = await contract.transfer(toAddress, value);
   return tx.hash;
+}
+
+async function estimateTransferNativeCost({ privateKey, toAddress, amount }) {
+  const provider = new ethers.JsonRpcProvider(RPC_URL);
+  const signingWallet = new ethers.Wallet(privateKey, provider);
+  const contract = new ethers.Contract(tokenArtifact.address, tokenArtifact.abi, signingWallet);
+  const value = ethers.parseUnits(String(amount), 18);
+  const gasLimit = await contract.transfer.estimateGas(toAddress, value);
+  const feeData = await provider.getFeeData();
+  const gasPrice = feeData.maxFeePerGas || feeData.gasPrice;
+
+  if (!gasPrice) {
+    throw new Error("Network fee data is unavailable. Try again in a moment.");
+  }
+
+  return (gasLimit * gasPrice * 120n) / 100n;
 }
 
 function shortHash(value) {
@@ -71,7 +86,7 @@ export default function SendTokens({ onBack, onShowHistory }) {
     }
 
     try {
-      const currentWallet = await fetchBalance();
+      const currentWallet = await fetchWalletStatus();
       setWallet(currentWallet);
     } catch (requestError) {
       if (!silent) {
@@ -119,9 +134,15 @@ export default function SendTokens({ onBack, onShowHistory }) {
       return;
     }
 
-    if (!wallet?.walletAddress) {
+    if (!wallet?.wallet?.walletAddress) {
       setTransferState("error");
       setError("Wallet address is not available yet. Reload the wallet and try again.");
+      return;
+    }
+
+    if (!wallet.fundingReady || !wallet.blockchainAvailable) {
+      setTransferState("error");
+      setError("Wallet funding is not ready or live balances are unavailable.");
       return;
     }
 
@@ -132,7 +153,7 @@ export default function SendTokens({ onBack, onShowHistory }) {
     setError("");
 
     try {
-      const fromAddress = ethers.getAddress(wallet.walletAddress);
+      const fromAddress = ethers.getAddress(wallet.wallet.walletAddress);
       const toAddress = ethers.getAddress(trimmedRecipient);
       const privateKey = getWalletPrivateKey(fromAddress);
 
@@ -149,6 +170,24 @@ export default function SendTokens({ onBack, onShowHistory }) {
         throw new Error(
           "The local private key does not match this wallet address. Transfers cannot be signed from here."
         );
+      }
+
+      const tokenBalanceRaw = BigInt(wallet.currentTokenBalance?.raw || "0");
+      const requestedAmountRaw = ethers.parseUnits(trimmedAmount, 18);
+
+      if (tokenBalanceRaw < requestedAmountRaw) {
+        throw new Error("Insufficient token balance for this transfer.");
+      }
+
+      const estimatedNativeCost = await estimateTransferNativeCost({
+        privateKey,
+        toAddress,
+        amount: trimmedAmount,
+      });
+      const nativeBalanceRaw = BigInt(wallet.currentNativeBalance?.raw || "0");
+
+      if (nativeBalanceRaw < estimatedNativeCost) {
+        throw new Error("Insufficient native gas balance for the estimated network cost.");
       }
 
       const txHash = await broadcastTokenTransfer({
@@ -181,8 +220,10 @@ export default function SendTokens({ onBack, onShowHistory }) {
   }
 
   const isBusy = transferState === "signing" || transferState === "submitting";
-  const isFormDisabled = walletLoading || isBusy;
-  const walletAddress = wallet?.walletAddress || "";
+  const walletAddress = wallet?.wallet?.walletAddress || "";
+  const hasReadyWallet = Boolean(walletAddress && wallet?.fundingReady && wallet?.blockchainAvailable);
+  const hasLocalPrivateKey = Boolean(walletAddress && getWalletPrivateKey(walletAddress));
+  const isFormDisabled = walletLoading || isBusy || !hasReadyWallet || !hasLocalPrivateKey;
   const submitLabel =
     transferState === "signing"
       ? "Signing..."

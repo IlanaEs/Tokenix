@@ -1,6 +1,11 @@
 import express from "express";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { createWallet, getBalance } from "../services/walletService.js";
+import {
+  enqueueFundingRetry,
+  getWalletStatus,
+  publicError,
+} from "../services/walletFundingService.js";
 
 export const walletRoutes = express.Router();
 
@@ -30,13 +35,13 @@ walletRoutes.post("/create", requireAuth, async (req, res) => {
       return res.status(400).json({ message: "walletAddress and publicKey are required" });
     }
 
-    const created = await createWallet({
+    const result = await createWallet({
       userId: req.user.id,
       walletAddress,
       publicKey,
     });
 
-    return res.status(201).json(created);
+    return res.status(result.created ? 201 : 200).json(result.status);
   } catch (error) {
     console.error("Wallet creation failed:", error);
     const status = error?.status || error?.statusCode;
@@ -48,6 +53,38 @@ walletRoutes.post("/create", requireAuth, async (req, res) => {
     }
 
     return res.status(500).json({ message: "Failed to create wallet" });
+  }
+});
+
+walletRoutes.get("/status", requireAuth, async (req, res) => {
+  try {
+    return res.json(await getWalletStatus(req.user.id));
+  } catch (error) {
+    console.error("Wallet status lookup failed:", error);
+    return res.status(500).json({
+      lifecycleState: "temporarily_unavailable",
+      fundingReady: false,
+      blockchainAvailable: false,
+      wallet: null,
+      currentTokenBalance: null,
+      currentNativeBalance: null,
+      funding: null,
+      observations: null,
+      errors: [publicError("BLOCKCHAIN_UNAVAILABLE")],
+    });
+  }
+});
+
+walletRoutes.post("/funding/retry", requireAuth, async (req, res) => {
+  try {
+    return res.json(await enqueueFundingRetry(req.user.id));
+  } catch (error) {
+    const status = error?.status || error?.statusCode || 500;
+    const code = error?.publicCode || "FUNDING_RETRY_NOT_ALLOWED";
+    return res.status(status === 500 ? 500 : status).json({
+      message: publicError(code).message,
+      code,
+    });
   }
 });
 

@@ -6,6 +6,7 @@ import { adminRoutes } from './routes/adminRoutes.js';
 import BlockchainClient from './services/BlockchainClient.js';
 import { pool } from './db.js';
 import { runDatabaseBootstrap } from './bootstrap/runDatabaseBootstrap.js';
+import { startWalletFundingWorker, stopWalletFundingWorker } from './services/walletFundingWorker.js';
 
 const app = express();
 app.use(express.json());
@@ -96,9 +97,20 @@ if (!process.env.CONTRACT_ADDRESS) {
 try {
   await runDatabaseBootstrap();
 
-  app.listen(port, () => {
+  const server = app.listen(port, () => {
     console.log(`Backend service is running on port ${port}`);
   });
+  startWalletFundingWorker();
+
+  const shutdown = () => {
+    stopWalletFundingWorker();
+    server.close(() => {
+      pool.end().finally(() => process.exit(0));
+    });
+  };
+
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 } catch (error) {
   console.error("Failed to bootstrap database schema:", error);
   process.exit(1);
