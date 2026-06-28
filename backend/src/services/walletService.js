@@ -115,7 +115,6 @@ async function _fundAndLogWallet(userId, walletAddress) {
 }
 
 export async function createWallet({ userId, walletAddress, publicKey }) {
-  const fundingSeed = await prepareFundingJobSeed({ userId, walletAddress });
   const client = await pool.connect();
 
   try {
@@ -149,6 +148,11 @@ export async function createWallet({ userId, walletAddress, publicKey }) {
       );
       created = existing.rows[0];
     }
+
+    const fundingSeed = await prepareFundingJobSeed({
+      userId: created.userId,
+      walletAddress: created.walletAddress,
+    });
 
     await createFundingJobInTransaction(client, {
       userId: created.userId,

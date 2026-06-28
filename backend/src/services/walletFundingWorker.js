@@ -48,12 +48,7 @@ function safeWorkerErrorCode(error, fallback = "BLOCKCHAIN_UNAVAILABLE") {
 async function acquireJob() {
   const { rows } = await pool.query(
     `
-    UPDATE wallet_funding_jobs
-    SET locked_by = $1,
-        locked_until = NOW() + ($2 || ' seconds')::INTERVAL,
-        version = version + 1,
-        updated_at = NOW()
-    WHERE funding_job_id = (
+    WITH candidate AS (
       SELECT funding_job_id
       FROM wallet_funding_jobs
       WHERE funding_ready = FALSE
@@ -62,12 +57,40 @@ async function acquireJob() {
         AND (locked_until IS NULL OR locked_until < NOW())
       ORDER BY created_at ASC
       LIMIT 1
+      FOR UPDATE SKIP LOCKED
     )
-    RETURNING *
+    UPDATE wallet_funding_jobs AS job
+    SET locked_by = $1,
+        locked_until = NOW() + ($2 || ' seconds')::INTERVAL,
+        version = job.version + 1,
+        updated_at = NOW()
+    FROM candidate
+    WHERE job.funding_job_id = candidate.funding_job_id
+      AND job.funding_ready = FALSE
+      AND job.lifecycle_state IN ('funding_pending', 'funding_failed', 'blocked')
+      AND job.next_retry_at <= NOW()
+      AND (job.locked_until IS NULL OR job.locked_until < NOW())
+    RETURNING job.*
     `,
     [WORKER_ID, String(LEASE_SECONDS)]
   );
   return rows[0] || null;
+}
+
+async function ownsJobLease(job) {
+  const { rows } = await pool.query(
+    `
+    SELECT funding_job_id
+    FROM wallet_funding_jobs
+    WHERE funding_job_id = $1
+      AND locked_by = $2
+      AND version = $3
+      AND funding_ready = FALSE
+    LIMIT 1
+    `,
+    [job.funding_job_id, WORKER_ID, job.version]
+  );
+  return Boolean(rows[0]);
 }
 
 async function markJobError(job, phase, status, errorCode) {
@@ -192,6 +215,8 @@ async function getOutbox(jobId, phase) {
     SELECT
       outbox_id AS "outboxId",
       tx_hash AS "txHash",
+      funding_job_id AS "fundingJobId",
+      phase,
       signer_address AS "signerAddress",
       nonce,
       chain_id AS "chainId",
@@ -213,8 +238,12 @@ async function getOutbox(jobId, phase) {
 }
 
 async function persistOutbox({ job, phase, signed }) {
+  if (!(await ownsJobLease(job))) {
+    return getOutbox(job.funding_job_id, phase);
+  }
+
   const encrypted = encryptRawTransaction(signed.rawTransaction);
-  await pool.query(
+  const { rows } = await pool.query(
     `
     INSERT INTO signed_transaction_outbox (
       funding_job_id,
@@ -234,7 +263,8 @@ async function persistOutbox({ job, phase, signed }) {
       status
     )
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'signed')
-    ON CONFLICT (tx_hash) DO NOTHING
+    ON CONFLICT (funding_job_id, phase) DO NOTHING
+    RETURNING outbox_id
     `,
     [
       job.funding_job_id,
@@ -253,6 +283,12 @@ async function persistOutbox({ job, phase, signed }) {
       signed.maxPriorityFeePerGas,
     ]
   );
+
+  if (!rows[0]) {
+    return getOutbox(job.funding_job_id, phase);
+  }
+
+  return getOutbox(job.funding_job_id, phase);
 }
 
 async function setPhaseSigned(job, phase, signed) {
@@ -276,6 +312,14 @@ async function setPhaseSigned(job, phase, signed) {
 }
 
 async function broadcastOutbox(job, phase, outbox) {
+  if (
+    Number(outbox.fundingJobId) !== Number(job.funding_job_id) ||
+    outbox.phase !== phase ||
+    !(await ownsJobLease(job))
+  ) {
+    return false;
+  }
+
   if (outbox.chainEpochId !== job.chain_epoch_id) {
     await markJobError(job, phase, FUNDING_PHASE_STATUSES.NEEDS_MANUAL_REVIEW, "CHAIN_EPOCH_MISMATCH");
     return false;
@@ -397,6 +441,15 @@ async function preparePhase(job, phase) {
     return null;
   }
 
+  if (!(await ownsJobLease(job))) {
+    return null;
+  }
+
+  const existingOutbox = await getOutbox(job.funding_job_id, phase);
+  if (existingOutbox) {
+    return existingOutbox;
+  }
+
   const nonce = await reserveNonce({ signerAddress, chainId, chainEpochId });
   const signed = phase === "gas"
     ? await blockchainClient.buildSignedGasFundingTransaction({
@@ -412,8 +465,10 @@ async function preparePhase(job, phase) {
     });
 
   signed.nonce = nonce;
-  await persistOutbox({ job: { ...job, chain_epoch_id: chainEpochId }, phase, signed });
-  await setPhaseSigned({ ...job, chain_epoch_id: chainEpochId }, phase, signed);
+  const persistedOutbox = await persistOutbox({ job: { ...job, chain_epoch_id: chainEpochId }, phase, signed });
+  if (persistedOutbox?.txHash === signed.txHash && await ownsJobLease(job)) {
+    await setPhaseSigned({ ...job, chain_epoch_id: chainEpochId }, phase, signed);
+  }
   return getOutbox(job.funding_job_id, phase);
 }
 
@@ -525,6 +580,9 @@ export function stopWalletFundingWorker() {
 export const __test = {
   acquireJob,
   blockchainClient,
+  getOutbox,
   initializeNonceReservation,
+  ownsJobLease,
+  persistOutbox,
   processJob,
 };

@@ -143,6 +143,9 @@ CREATE TABLE IF NOT EXISTS signed_transaction_outbox (
   UNIQUE(signer_address, chain_id, chain_epoch_id, nonce)
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS signed_transaction_outbox_one_phase_per_job
+ON signed_transaction_outbox (funding_job_id, phase);
+
 CREATE TABLE IF NOT EXISTS faucet_nonce_reservations (
   signer_address TEXT NOT NULL,
   chain_id BIGINT NOT NULL,
