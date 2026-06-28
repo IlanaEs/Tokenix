@@ -2,8 +2,10 @@
   "name": "tokenix-frontend",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "vite",
+    "test": "node --test src/lib/*.test.js",
     "build": "vite build",
     "preview": "vite preview"
   },
