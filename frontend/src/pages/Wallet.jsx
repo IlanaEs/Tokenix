@@ -8,7 +8,14 @@ import {
   retryWalletFunding,
 } from "../lib/api";
 import { clearToken } from "../lib/token";
-import { getWalletPrivateKey, storeWalletPrivateKey } from "../lib/walletKey";
+import {
+  createTokenixPrivateKeyBackup,
+  getWalletPrivateKey,
+  hasMatchingLocalPrivateKey,
+  importWalletPrivateKey,
+  storeWalletPrivateKey,
+  WalletKeyError,
+} from "../lib/walletKey";
 
 const LIVE_BALANCE_NOTICE =
   "Readiness comes from the wallet status endpoint. Token and native balances are live blockchain observations and may be temporarily unavailable.";
@@ -24,6 +31,7 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onSh
   const [hasLocalPrivateKey, setHasLocalPrivateKey] = useState(false);
   const [exportedPrivateKey, setExportedPrivateKey] = useState("");
   const [importPrivateKey, setImportPrivateKey] = useState("");
+  const [showBackupPrompt, setShowBackupPrompt] = useState(false);
   const [keyMessage, setKeyMessage] = useState("");
   const [keyError, setKeyError] = useState("");
   // Run the auto-bootstrap exactly once (StrictMode double-invokes effects in
@@ -61,7 +69,7 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onSh
   function applyStatus(status) {
     setWalletStatus(status);
     const walletAddress = status?.wallet?.walletAddress || "";
-    setHasLocalPrivateKey(Boolean(walletAddress && getWalletPrivateKey(walletAddress)));
+    setHasLocalPrivateKey(Boolean(walletAddress && hasMatchingLocalPrivateKey(walletAddress)));
   }
 
   const loadWallet = useCallback(async () => {
@@ -94,6 +102,8 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onSh
           ethers.getAddress(status.wallet.walletAddress) === ethers.getAddress(walletAddress)
         ) {
           storeWalletPrivateKey(walletAddress, generatedWallet.privateKey);
+          setShowBackupPrompt(true);
+          setKeyMessage("Wallet created. Back up your private key now; Tokenix cannot recover it later.");
         }
       }
 
@@ -210,11 +220,32 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onSh
     }
 
     setExportedPrivateKey(privateKey);
-    setHasLocalPrivateKey(true);
+    setHasLocalPrivateKey(hasMatchingLocalPrivateKey(walletAddress));
   }
 
   function handleHidePrivateKey() {
     setExportedPrivateKey("");
+  }
+
+  async function handleCopyPrivateKey() {
+    const privateKey = exportedPrivateKey || getWalletPrivateKey(walletAddress);
+    if (!privateKey) {
+      setKeyError("No private key is available to copy from this browser.");
+      return;
+    }
+
+    if (!navigator.clipboard?.writeText) {
+      setKeyError("Clipboard access is unavailable. Use the revealed key or download a backup instead.");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(privateKey);
+      setKeyError("");
+      setKeyMessage("Private key copied. Clear your clipboard after saving it securely.");
+    } catch {
+      setKeyError("Could not copy the private key. Use the revealed key or download a backup instead.");
+    }
   }
 
   function handleDownloadPrivateKey() {
@@ -224,11 +255,10 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onSh
       return;
     }
 
-    const backup = {
+    const backup = createTokenixPrivateKeyBackup({
       walletAddress,
       privateKey,
-      exportedAt: new Date().toISOString(),
-    };
+    });
     const blob = new Blob([JSON.stringify(backup, null, 2)], {
       type: "application/json",
     });
@@ -238,6 +268,8 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onSh
     link.download = `tokenix-wallet-${walletAddress.slice(0, 8)}.json`;
     link.click();
     URL.revokeObjectURL(url);
+    setKeyError("");
+    setKeyMessage("Tokenix backup JSON downloaded. Store it somewhere secure.");
   }
 
   function handleImportPrivateKey(event) {
@@ -250,29 +282,26 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onSh
       return;
     }
 
-    const trimmedPrivateKey = importPrivateKey.trim();
-    if (!trimmedPrivateKey) {
-      setKeyError("Paste the private key for this wallet.");
-      return;
-    }
-
     try {
-      const importedWallet = new ethers.Wallet(trimmedPrivateKey);
-      const importedAddress = ethers.getAddress(importedWallet.address);
-      const currentAddress = ethers.getAddress(walletAddress);
-
-      if (importedAddress !== currentAddress) {
-        setKeyError("This private key belongs to a different wallet address. The key was not saved.");
-        return;
-      }
-
-      storeWalletPrivateKey(currentAddress, importedWallet.privateKey);
+      const result = importWalletPrivateKey({
+        walletAddress,
+        input: importPrivateKey,
+      });
       setHasLocalPrivateKey(true);
       setExportedPrivateKey("");
       setImportPrivateKey("");
-      setKeyMessage("Private key imported for this wallet. Transfers are enabled in this browser.");
-    } catch {
-      setKeyError("Enter a valid Ethereum private key.");
+      setShowBackupPrompt(false);
+      setKeyMessage(
+        result.source === "tokenix_backup_json"
+          ? "Tokenix backup imported for this wallet. Transfers are enabled in this browser."
+          : "Private key imported for this wallet. Transfers are enabled in this browser."
+      );
+    } catch (importError) {
+      setKeyError(
+        importError instanceof WalletKeyError
+          ? importError.message
+          : "Enter a valid private key or Tokenix backup JSON."
+      );
     }
   }
 
@@ -376,14 +405,34 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onSh
             <div className="notice warning">
               <strong>Private key needed for transfers</strong>
               <p>{MISSING_KEY_MESSAGE}</p>
-              <p>Please import your private key to enable transfers from this browser.</p>
+              <p>Paste the matching raw private key or Tokenix backup JSON below to restore signing on this device.</p>
+            </div>
+          ) : null}
+
+          {showBackupPrompt && hasLocalPrivateKey ? (
+            <div className="notice warning">
+              <strong>Back up your private key</strong>
+              <p>
+                This browser is the only place Tokenix can access your new signing key. The backend stores only your public wallet address and cannot recover the private key if this browser data is lost.
+              </p>
+              <div className="actionsRow walletKeyActions">
+                <button type="button" className="btn" onClick={handleRevealPrivateKey}>
+                  Reveal Private Key
+                </button>
+                <button type="button" className="btn" onClick={handleDownloadPrivateKey}>
+                  Download Backup
+                </button>
+                <button type="button" className="btn" onClick={() => setShowBackupPrompt(false)}>
+                  Dismiss
+                </button>
+              </div>
             </div>
           ) : null}
 
           <section className="detailPanel">
-            <div className="detailLabel">Export Private Key</div>
+            <div className="detailLabel">Backup Private Key</div>
             <p className="helperText">
-              Anyone with this private key can control this wallet. Store it somewhere secure and never share it.
+              Use this only in a private place. Anyone with this key or backup file can control this wallet, and Tokenix cannot recover it for you.
             </p>
 
             <div className="actionsRow walletKeyActions">
@@ -393,12 +442,15 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onSh
                 onClick={handleRevealPrivateKey}
                 disabled={!walletAddress}
               >
-                Export Private Key
+                Reveal Private Key
               </button>
               {exportedPrivateKey ? (
                 <>
                   <button type="button" className="btn" onClick={handleHidePrivateKey}>
                     Hide Private Key
+                  </button>
+                  <button type="button" className="btn" onClick={() => void handleCopyPrivateKey()}>
+                    Copy Private Key
                   </button>
                   <button type="button" className="btn" onClick={handleDownloadPrivateKey}>
                     Download Backup
@@ -415,12 +467,12 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onSh
           <section className="detailPanel">
             <div className="detailLabel">Import Existing Wallet</div>
             <p className="helperText">
-              Paste the private key for this wallet. It will be saved only in this browser after the derived address matches your wallet address.
+              Paste a raw private key or Tokenix backup JSON. The address is derived locally and must match your backend wallet before anything is saved.
             </p>
 
             <form className="formStack walletKeyForm" onSubmit={handleImportPrivateKey}>
               <label className="fieldLabel">
-                Private key
+                Private key or Tokenix backup JSON
                 <textarea
                   className="input mono privateKeyInput"
                   value={importPrivateKey}
@@ -429,7 +481,7 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onSh
                     setKeyMessage("");
                     setKeyError("");
                   }}
-                  placeholder="0x..."
+                  placeholder={'0x... or { "type": "tokenix.privateKeyBackup", ... }'}
                   autoComplete="off"
                   spellCheck="false"
                   rows={3}

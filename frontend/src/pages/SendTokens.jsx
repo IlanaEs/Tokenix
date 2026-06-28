@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { ethers } from "ethers";
 import { fetchWalletStatus, getErrorMessage, transferTokens } from "../lib/api";
-import { getWalletPrivateKey } from "../lib/walletKey";
+import { getWalletPrivateKey, hasMatchingLocalPrivateKey } from "../lib/walletKey";
+import { canUseSendTokens, getSendTokensUnavailableReason } from "../lib/sendTokenReadiness";
 import tokenArtifact from "../abi/MyToken.json";
 
 const RPC_URL = import.meta.env.VITE_RPC_URL ?? "http://localhost:8545";
@@ -221,9 +222,17 @@ export default function SendTokens({ onBack, onShowHistory }) {
 
   const isBusy = transferState === "signing" || transferState === "submitting";
   const walletAddress = wallet?.wallet?.walletAddress || "";
-  const hasReadyWallet = Boolean(walletAddress && wallet?.fundingReady && wallet?.blockchainAvailable);
-  const hasLocalPrivateKey = Boolean(walletAddress && getWalletPrivateKey(walletAddress));
-  const isFormDisabled = walletLoading || isBusy || !hasReadyWallet || !hasLocalPrivateKey;
+  const hasLocalPrivateKey = Boolean(walletAddress && hasMatchingLocalPrivateKey(walletAddress));
+  const sendReadiness = {
+    walletLoading,
+    isBusy,
+    walletAddress,
+    fundingReady: Boolean(wallet?.fundingReady),
+    blockchainAvailable: Boolean(wallet?.blockchainAvailable),
+    hasLocalPrivateKey,
+  };
+  const isFormDisabled = !canUseSendTokens(sendReadiness);
+  const unavailableReason = getSendTokensUnavailableReason(sendReadiness);
   const submitLabel =
     transferState === "signing"
       ? "Signing..."
@@ -251,6 +260,13 @@ export default function SendTokens({ onBack, onShowHistory }) {
         <div className="detailPanel">
           <div className="detailLabel">From wallet</div>
           <div className="mono breakText">{walletAddress}</div>
+        </div>
+      ) : null}
+
+      {!walletLoading && walletAddress && !hasLocalPrivateKey ? (
+        <div className="notice warning">
+          <strong>Private key missing on this device</strong>
+          <p>{unavailableReason}</p>
         </div>
       ) : null}
 
