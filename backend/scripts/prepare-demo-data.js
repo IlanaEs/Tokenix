@@ -140,16 +140,21 @@ async function insertTransaction({
   return rows[0];
 }
 
-async function clearExistingDemoTransactions(users) {
+async function demoTransfersExist(users) {
   const userIds = users.map((user) => user.userId);
 
-  await pool.query(
+  const { rows } = await pool.query(
     `
-    DELETE FROM transactions
+    SELECT 1
+    FROM transactions
     WHERE user_id = ANY($1::int[])
+      AND type = 'USER_TRANSFER'
+    LIMIT 1
     `,
     [userIds]
   );
+
+  return rows.length > 0;
 }
 
 async function fundWallet({ client, user, walletAddress }) {
@@ -325,7 +330,6 @@ async function main() {
   }
 
   writeWalletFile(walletStore);
-  await clearExistingDemoTransactions(users);
 
   for (const user of users) {
     const walletAddress = wallets[user.email].walletAddress;
@@ -347,33 +351,55 @@ async function main() {
   const user2 = users.find((user) => user.email === "user2@example.com");
   const admin = users.find((user) => user.email === "admin@example.com");
 
-  transactions.push(
-    await createSignedDemoTransfer({
-      client,
-      provider,
-      fromUser: user1,
-      fromWallet: wallets[user1.email],
-      toWallet: wallets[user2.email],
-    })
-  );
+  // Demo transfers are idempotent: once the seeded transfer history exists we
+  // skip recreating it. Re-running the seed therefore does not move tokens
+  // again, so demo balances stay at the funded baseline instead of drifting.
+  if (await demoTransfersExist(users)) {
+    console.log(
+      "Demo transfer history already present — skipping demo transfers to keep balances stable."
+    );
+  } else {
+    // Net-zero transfer cycle: each demo wallet sends and receives the same
+    // amount, so the faucet-funded baseline (100 TNX each) is preserved while
+    // still producing realistic confirmed + pending transfer history.
+    transactions.push(
+      await createSignedDemoTransfer({
+        client,
+        provider,
+        fromUser: user1,
+        fromWallet: wallets[user1.email],
+        toWallet: wallets[user2.email],
+      })
+    );
 
-  transactions.push(
-    await createSignedDemoTransfer({
-      client,
-      provider,
-      fromUser: user2,
-      fromWallet: wallets[user2.email],
-      toWallet: wallets[admin.email],
-    })
-  );
+    transactions.push(
+      await createSignedDemoTransfer({
+        client,
+        provider,
+        fromUser: user2,
+        fromWallet: wallets[user2.email],
+        toWallet: wallets[admin.email],
+      })
+    );
 
-  transactions.push(
-    await createPendingDemoTransaction({
-      user: user1,
-      fromWallet: wallets[user1.email],
-      toWallet: wallets[admin.email],
-    })
-  );
+    transactions.push(
+      await createSignedDemoTransfer({
+        client,
+        provider,
+        fromUser: admin,
+        fromWallet: wallets[admin.email],
+        toWallet: wallets[user1.email],
+      })
+    );
+
+    transactions.push(
+      await createPendingDemoTransaction({
+        user: user1,
+        fromWallet: wallets[user1.email],
+        toWallet: wallets[admin.email],
+      })
+    );
+  }
 
   const summary = await summarize({ client, users, wallets, transactions });
   console.log(JSON.stringify(summary, null, 2));

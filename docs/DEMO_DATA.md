@@ -100,10 +100,16 @@ The script prepares:
 - One `ADMIN` user
 - Two regular `USER` accounts
 - One wallet per demo user
-- Blockchain-funded wallets
-- At least two `CONFIRMED` user transfer transactions
+- Blockchain-funded wallets, each at a `100` TNX baseline
+- Three `CONFIRMED` user transfer transactions forming a balanced cycle
+  (each wallet sends and receives the same amount, so balances stay at `100`)
 - One `PENDING` demo transaction for monitoring visibility
 - Populated transaction history and admin monitoring data
+
+The seed is idempotent: funding is skipped for wallets that already claimed
+from the faucet, and the demo transfers are skipped when transfer history
+already exists. Re-running the seed therefore does not move tokens again, so
+demo balances stay at the predictable `100` TNX baseline instead of drifting.
 
 The resulting state supports:
 
