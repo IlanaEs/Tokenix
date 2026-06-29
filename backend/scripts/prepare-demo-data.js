@@ -158,7 +158,27 @@ async function fundWallet({ client, user, walletAddress }) {
     return null;
   }
 
-  const txHash = await client.fundAccount(walletAddress);
+  // Token ownership is transferred to the GuardedFaucet at deploy time, so the
+  // token can only be minted through the faucet's owner-gated claim() — a direct
+  // token.mint() from account 0 (the legacy client.fundAccount path) reverts with
+  // OwnableUnauthorizedAccount. Account 0 is the unlocked faucet owner here, so we
+  // fund gas from it and claim the fixed faucet amount on the wallet's behalf.
+  const adminSigner = await client.provider.getSigner(0);
+
+  const ethTx = await adminSigner.sendTransaction({
+    to: walletAddress,
+    value: ethers.parseEther("0.01"),
+  });
+  await client.waitForTransaction(ethTx.hash);
+
+  const requestId = await client.computeFaucetRequestId(walletAddress);
+  const claimAmount = await client.faucetContract.claimAmount();
+  const claimTx = await client.faucetContract
+    .connect(adminSigner)
+    .claim(walletAddress, requestId, claimAmount);
+  await client.waitForTransaction(claimTx.hash);
+  const txHash = claimTx.hash;
+
   return insertTransaction({
     userId: user.userId,
     type: "SYSTEM_FUNDING",
