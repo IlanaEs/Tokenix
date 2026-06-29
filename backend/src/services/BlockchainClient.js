@@ -326,17 +326,13 @@ export default class BlockchainClient {
  
   // Serialize admin-signer faucet operations on this instance.
   //
-  // The dev faucet funds each new wallet by sending an ETH transfer and a token
-  // mint from a single shared admin account (account 0). When two wallet
-  // creations run close together, both flows fetch the same pending nonce, so
-  // one account's transaction is dropped and its waitForTransaction hangs until
-  // the timeout — leaving the funding row stuck and then marked FAILED.
-  //
-  // Chaining every faucet run through this queue guarantees one funding
-  // completes (and consumes its nonce) before the next begins, removing the
-  // contention. This is dev/test funding infrastructure only: the production
-  // frontend-signed transfer flow never uses the admin signer, so it is
-  // unaffected by this serialization.
+  // Legacy/test-only: the original dev faucet funded each new wallet with an ETH
+  // transfer and a direct token mint from a single shared admin account
+  // (account 0), so concurrent wallet creations could contend on that account's
+  // nonce. Chaining every run through this queue guarantees one completes (and
+  // consumes its nonce) before the next begins. The direct-mint path is now
+  // disabled (see _fundAccountUnlocked); this serialization is retained only to
+  // keep the faucet-concurrency unit tests meaningful.
   _runExclusiveFaucet(operation) {
     const result = this._faucetQueue.then(operation, operation);
     // Keep the queue alive regardless of this run's outcome so a single failed
@@ -348,6 +344,12 @@ export default class BlockchainClient {
     return result;
   }
 
+  // DEPRECATED dev faucet path. Token ownership is transferred to the
+  // GuardedFaucet at deploy time, so the admin account (account 0) can no longer
+  // mint directly — a direct token.mint() reverts with OwnableUnauthorizedAccount.
+  // Wallet funding now runs through the wallet funding worker, which mints via the
+  // faucet's owner-gated claim() (see walletFundingWorker.js /
+  // buildSignedTokenFundingTransaction). Do not wire this back into wallet creation.
   async fundAccount(toAddress, amountEth = DEFAULT_ETH_FUNDING_AMOUNT, tokenAmount = DEFAULT_TOKEN_PROVISION_AMOUNT) {
     this.ensureConfigured();
     return this._runExclusiveFaucet(() =>
@@ -355,38 +357,18 @@ export default class BlockchainClient {
     );
   }
 
-  async _fundAccountUnlocked(toAddress, amountEth, tokenAmount) {
-    try {
-      const accounts = await this.provider.listAccounts();
-      if (!accounts || accounts.length === 0) {
-        const error = new Error('No accounts available on provider for faucet');
-        error.status = 502;
-        throw error;
-      }
-      const adminSigner = await this._getAdminSigner();
-
-      console.log(`⛽ Funding ${toAddress} with ${amountEth} ETH...`);
-      const ethTx = await adminSigner.sendTransaction({
-        to: toAddress,
-        value: ethers.parseEther(String(amountEth))
-      });
-
-      await this.waitForTransaction(ethTx.hash);
-      console.log(`✅ ETH funding confirmed for ${toAddress}`);
-
-      const mintAmount = ethers.parseUnits(String(tokenAmount), 18);
-      const mintTx = await this.contract.connect(adminSigner).mint(toAddress, mintAmount);
-
-      await this.waitForTransaction(mintTx.hash);
-      console.log(`✅ Minted ${ethers.formatUnits(mintAmount, 18)} TNX for ${toAddress}`);
-      return mintTx.hash;
-    } catch (err) {
-      console.error('❌ Faucet failed:', err.message);
-      const error = new Error('Faucet funding failed');
-      error.status = 502;
-      error.txHash = err?.txHash || null;
-      throw error;
-    }
+  async _fundAccountUnlocked() {
+    // Intentionally disabled: a direct token.mint() from the admin account
+    // reverts now that the GuardedFaucet owns the token. Fund wallets through the
+    // wallet funding worker (GuardedFaucet.claim()) rather than resurrecting this
+    // direct-mint path.
+    const error = new Error(
+      'Direct admin-mint faucet funding is disabled: the token is owned by the ' +
+      'GuardedFaucet. Fund wallets through the wallet funding worker (GuardedFaucet.claim()).'
+    );
+    error.status = 501;
+    error.code = 'FAUCET_DIRECT_MINT_DISABLED';
+    throw error;
   }
 
   async getTransaction(txHash) {
@@ -430,18 +412,6 @@ export default class BlockchainClient {
       error.txHash = err?.txHash || null;
       throw error;
     }
-  }
-
-  // expose admin signer for tests and internal use
-  async _getAdminSigner() {
-    this.ensureConfigured();
-    const accounts = await this.provider.listAccounts();
-    if (!accounts || accounts.length === 0) {
-      const error = new Error('No accounts available on provider for admin actions');
-      error.status = 502;
-      throw error;
-    }
-    return this.provider.getSigner(0);
   }
 
   async waitForTransaction(txHash, confirmations = 1) {
