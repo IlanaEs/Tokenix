@@ -17,5 +17,10 @@ npm-debug.log*
 .env
 .env.*
 reset-local-chain.sh
+
+# Local-only demo data (generated demo wallet keys for the local Hardhat chain).
+# Never commit: holds private keys, even though it is only for the ephemeral
+# local chain. Path is mounted into the backend container via DEMO_WALLET_FILE.
+backend/.demo-data/
 contracts/artifacts/
 contracts/cache/
