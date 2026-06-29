@@ -153,8 +153,12 @@ async function clearExistingDemoTransactions(users) {
 }
 
 async function fundWallet({ client, user, walletAddress }) {
-  const balance = ethers.parseUnits(await client.getBalance(walletAddress), 18);
-  if (balance >= ethers.parseUnits("100", 18)) {
+  // The GuardedFaucet allows a single claim per wallet, so re-running the seed
+  // must not attempt a second claim (it would revert with "FAUCET: wallet
+  // claimed"). Skip funding when the wallet has already claimed; readiness is
+  // marked separately by markFundingJobReady so it still applies on re-runs.
+  const alreadyClaimed = await client.faucetContract.walletClaimed(walletAddress);
+  if (alreadyClaimed) {
     return null;
   }
 
@@ -189,6 +193,56 @@ async function fundWallet({ client, user, walletAddress }) {
     status: "CONFIRMED",
     confirmedAt: new Date(),
   });
+}
+
+async function markFundingJobReady({ client, user, walletAddress, tokenTxHash = null }) {
+  // The seed funds wallets directly through the faucet instead of going through
+  // the wallet funding worker, so createWallet's funding-job flow never runs for
+  // these wallets. Without a wallet_funding_jobs row, getWalletStatus reports
+  // funding_pending / fundingReady=false and the Wallet UI renders "Pending"
+  // instead of the real token balance. Insert/refresh a ready job so seeded
+  // wallets reflect the same readiness a worker-funded wallet would have.
+  const requestId = await client.computeFaucetRequestId(walletAddress);
+  const network = await client.provider.getNetwork();
+  const chainId = Number(network.chainId);
+  const chainEpochId = client.getChainEpochId();
+
+  await pool.query(
+    `
+    INSERT INTO wallet_funding_jobs (
+      user_id, wallet_address, lifecycle_state, funding_ready, confirmation_target,
+      token_request_id, chain_id, chain_epoch_id,
+      gas_status, gas_confirmations, gas_confirmed_at,
+      token_status, token_tx_hash, token_confirmations, token_confirmed_at,
+      token_transfer_event_validated, completed_at, updated_at
+    ) VALUES (
+      $1, $2, 'ready', TRUE, 1,
+      $3, $4, $5,
+      'confirmed', 1, NOW(),
+      'confirmed', $6, 1, NOW(),
+      TRUE, NOW(), NOW()
+    )
+    ON CONFLICT (user_id) DO UPDATE SET
+      wallet_address = EXCLUDED.wallet_address,
+      lifecycle_state = 'ready',
+      funding_ready = TRUE,
+      confirmation_target = 1,
+      token_request_id = EXCLUDED.token_request_id,
+      chain_id = EXCLUDED.chain_id,
+      chain_epoch_id = EXCLUDED.chain_epoch_id,
+      gas_status = 'confirmed',
+      gas_confirmations = 1,
+      gas_confirmed_at = NOW(),
+      token_status = 'confirmed',
+      token_tx_hash = COALESCE(EXCLUDED.token_tx_hash, wallet_funding_jobs.token_tx_hash),
+      token_confirmations = 1,
+      token_confirmed_at = NOW(),
+      token_transfer_event_validated = TRUE,
+      completed_at = NOW(),
+      updated_at = NOW()
+    `,
+    [user.userId, walletAddress, requestId, chainId, chainEpochId, tokenTxHash]
+  );
 }
 
 async function createSignedDemoTransfer({ client, provider, fromUser, fromWallet, toWallet }) {
@@ -274,15 +328,19 @@ async function main() {
   await clearExistingDemoTransactions(users);
 
   for (const user of users) {
-    const funding = await fundWallet({
-      client,
-      user,
-      walletAddress: wallets[user.email].walletAddress,
-    });
+    const walletAddress = wallets[user.email].walletAddress;
+    const funding = await fundWallet({ client, user, walletAddress });
 
     if (funding) {
       transactions.push(funding);
     }
+
+    await markFundingJobReady({
+      client,
+      user,
+      walletAddress,
+      tokenTxHash: funding?.txHash || null,
+    });
   }
 
   const user1 = users.find((user) => user.email === "user1@example.com");
