@@ -270,21 +270,6 @@ async function createSignedDemoTransfer({ client, provider, fromUser, fromWallet
   });
 }
 
-async function createPendingDemoTransaction({ user, fromWallet, toWallet }) {
-  const txHash = ethers.hexlify(ethers.randomBytes(32));
-
-  return insertTransaction({
-    userId: user.userId,
-    type: "USER_TRANSFER",
-    fromAddress: fromWallet.walletAddress,
-    toAddress: toWallet.walletAddress,
-    amount: "3",
-    txHash,
-    status: "PENDING",
-    confirmedAt: null,
-  });
-}
-
 async function summarize({ client, users, wallets, transactions }) {
   const balances = [];
 
@@ -361,7 +346,7 @@ async function main() {
   } else {
     // Net-zero transfer cycle: each demo wallet sends and receives the same
     // amount, so the faucet-funded baseline (100 TNX each) is preserved while
-    // still producing realistic confirmed + pending transfer history.
+    // still producing realistic CONFIRMED transfer history.
     transactions.push(
       await createSignedDemoTransfer({
         client,
@@ -389,14 +374,6 @@ async function main() {
         fromUser: admin,
         fromWallet: wallets[admin.email],
         toWallet: wallets[user1.email],
-      })
-    );
-
-    transactions.push(
-      await createPendingDemoTransaction({
-        user: user1,
-        fromWallet: wallets[user1.email],
-        toWallet: wallets[admin.email],
       })
     );
   }

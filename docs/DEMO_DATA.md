@@ -103,7 +103,6 @@ The script prepares:
 - Blockchain-funded wallets, each at a `100` TNX baseline
 - Three `CONFIRMED` user transfer transactions forming a balanced cycle
   (each wallet sends and receives the same amount, so balances stay at `100`)
-- One `PENDING` demo transaction for monitoring visibility
 - Populated transaction history and admin monitoring data
 
 The seed is idempotent: funding is skipped for wallets that already claimed
