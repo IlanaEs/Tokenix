@@ -54,7 +54,8 @@ RPC_URL="http://127.0.0.1:8545" \
 node scripts/prepare-demo-data.js
 ```
 
-The script stores temporary demo wallet private keys outside the repository by default:
+The script stores generated demo wallet private keys in `DEMO_WALLET_FILE`,
+which defaults to a temporary path outside the repository:
 
 ```text
 /tmp/tokenix-demo-wallets.json
@@ -62,7 +63,31 @@ The script stores temporary demo wallet private keys outside the repository by d
 
 This file is local runtime material only. It must not be committed.
 
-To choose a different local-only path:
+### Stable demo wallets across container restarts (recommended)
+
+The default `/tmp` location lives inside the backend container, so recreating
+that container (e.g. to change env vars) wipes the file and the next seed
+generates **new** wallet addresses and keys. To keep demo wallet addresses and
+keys stable across restarts/re-seeds, point `DEMO_WALLET_FILE` at a
+host-mounted, gitignored directory.
+
+In `docker-compose.yml`, mount a local directory into the backend service and
+set the env var (no secrets in compose — only the path):
+
+```yaml
+  backend:
+    environment:
+      DEMO_WALLET_FILE: /app/.demo-data/tokenix-demo-wallets.json
+    volumes:
+      - ./backend/.demo-data:/app/.demo-data
+```
+
+`backend/.demo-data/` is gitignored because the file holds local-chain private
+keys. Because the keys persist, re-running the seed is idempotent for funding:
+the faucet allows a single claim per wallet, so already-funded wallets are
+skipped and only their readiness/transaction records are refreshed.
+
+For a one-off non-default local path instead:
 
 ```bash
 DEMO_WALLET_FILE="/tmp/tokenix-demo-wallets.json"
