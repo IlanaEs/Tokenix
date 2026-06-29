@@ -238,6 +238,13 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onSh
     setExportedPrivateKey("");
   }
 
+  function handleBackupNow() {
+    // Single entry point from the reminder card into the one backup section
+    // below: reveal the key there, then dismiss the now-redundant prompt.
+    handleRevealPrivateKey();
+    setShowBackupPrompt(false);
+  }
+
   async function handleCopyPrivateKey() {
     const privateKey = exportedPrivateKey || getWalletPrivateKey(walletAddress);
     if (!privateKey) {
@@ -424,14 +431,11 @@ export default function Wallet({ onLogout, onShowSendTokens, onShowHistory, onSh
             <div className="notice warning">
               <strong>Back up your private key</strong>
               <p>
-                This browser is the only place Tokenix can access your new signing key. The backend stores only your public wallet address and cannot recover the private key if this browser data is lost.
+                This browser is the only place Tokenix can access your new signing key. The backend stores only your public wallet address and cannot recover the private key if this browser data is lost. Use the Backup Private Key section below to reveal and save it.
               </p>
               <div className="actionsRow walletKeyActions">
-                <button type="button" className="btn" onClick={handleRevealPrivateKey}>
-                  Reveal Private Key
-                </button>
-                <button type="button" className="btn" onClick={handleDownloadPrivateKey}>
-                  Download Backup
+                <button type="button" className="btn" onClick={handleBackupNow}>
+                  Back up now
                 </button>
                 <button type="button" className="btn" onClick={() => setShowBackupPrompt(false)}>
                   Dismiss
