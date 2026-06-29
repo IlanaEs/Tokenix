@@ -1,11 +1,17 @@
 import { useEffect, useState } from "react";
 import { ethers } from "ethers";
-import { fetchWalletStatus, getErrorMessage, transferTokens } from "../lib/api";
+import {
+  fetchTransactions,
+  fetchWalletStatus,
+  getErrorMessage,
+  transferTokens,
+} from "../lib/api";
 import { getWalletPrivateKey, hasMatchingLocalPrivateKey } from "../lib/walletKey";
 import { canUseSendTokens, getSendTokensUnavailableReason } from "../lib/sendTokenReadiness";
 import tokenArtifact from "../abi/MyToken.json";
 
 const RPC_URL = import.meta.env.VITE_RPC_URL ?? "http://localhost:8545";
+const SUBMITTED_POLL_INTERVAL_MS = 3000;
 
 function validateRecipient(value) {
   if (!value) {
@@ -105,6 +111,41 @@ export default function SendTokens({ onBack, onShowHistory }) {
   useEffect(() => {
     void loadWallet();
   }, []);
+
+  // While a submitted transfer is still PENDING, poll its status so the panel
+  // moves to CONFIRMED/FAILED instead of looking stuck. Stops on a terminal
+  // status, when the panel leaves the pending state, or on unmount.
+  useEffect(() => {
+    if (transferState !== "pending") {
+      return undefined;
+    }
+
+    const txId = submittedTx?.txId;
+    if (!txId || submittedTx?.status !== "PENDING") {
+      return undefined;
+    }
+
+    const intervalId = setInterval(async () => {
+      try {
+        const list = await fetchTransactions();
+        const row = Array.isArray(list)
+          ? list.find((transaction) => transaction.txId === txId)
+          : null;
+
+        if (row && row.status && row.status !== "PENDING") {
+          setSubmittedTx((previous) =>
+            previous && previous.txId === txId
+              ? { ...previous, status: row.status, confirmedAt: row.confirmedAt ?? previous.confirmedAt }
+              : previous
+          );
+        }
+      } catch {
+        // Ignore transient poll errors; the History view still reflects status.
+      }
+    }, SUBMITTED_POLL_INTERVAL_MS);
+
+    return () => clearInterval(intervalId);
+  }, [transferState, submittedTx?.txId, submittedTx?.status]);
 
   function clearFeedbackOnEdit() {
     if (error) {
@@ -316,10 +357,19 @@ export default function SendTokens({ onBack, onShowHistory }) {
       </form>
 
       {transferState === "pending" && submittedTx ? (
-        <div className="notice info">
-          <strong>Transfer submitted</strong>
+        <div className={`notice ${submittedTx.status === "FAILED" ? "error" : "info"}`}>
+          <strong>
+            {submittedTx.status === "CONFIRMED"
+              ? "Transfer confirmed"
+              : submittedTx.status === "FAILED"
+                ? "Transfer failed"
+                : "Transfer submitted"}
+          </strong>
           <p>
-            Transaction {submittedTx.txId} is {submittedTx.status}. Confirmation happens in the background.
+            Transaction {submittedTx.txId} is {submittedTx.status}.
+            {submittedTx.status === "PENDING"
+              ? " Waiting for on-chain confirmation…"
+              : ""}
           </p>
           {submittedTx.txHash ? (
             <p className="mono">txHash: {shortHash(submittedTx.txHash)}</p>

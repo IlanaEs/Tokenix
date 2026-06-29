@@ -5,6 +5,8 @@ import {
 } from "../lib/api";
 import { shortHash } from "../lib/format";
 
+const PENDING_POLL_INTERVAL_MS = 3000;
+
 function getStatusBadgeStyle(status) {
   const baseStyle = {
     display: "inline-block",
@@ -129,8 +131,10 @@ export default function TransactionHistory({ onBack }) {
   const [viewState, setViewState] = useState("loading");
   const [error, setError] = useState("");
 
-  async function loadTransactions() {
-    setViewState("loading");
+  async function loadTransactions({ silent = false } = {}) {
+    if (!silent) {
+      setViewState("loading");
+    }
     setError("");
 
     try {
@@ -143,15 +147,37 @@ export default function TransactionHistory({ onBack }) {
       setTransactions(result);
       setViewState(result.length > 0 ? "loaded" : "empty");
     } catch (requestError) {
-      setTransactions([]);
-      setError(getErrorMessage(requestError, "Failed to load transactions."));
-      setViewState("error");
+      // A failed background poll must not wipe the list the user is reading;
+      // only surface a hard error for an explicit (non-silent) load.
+      if (!silent) {
+        setTransactions([]);
+        setError(getErrorMessage(requestError, "Failed to load transactions."));
+        setViewState("error");
+      }
     }
   }
 
   useEffect(() => {
     void loadTransactions();
   }, []);
+
+  const hasPendingTransaction = transactions.some(
+    (transaction) => transaction.status === "PENDING"
+  );
+
+  // Auto-refresh while any transaction is still PENDING so the list moves to
+  // CONFIRMED/FAILED on its own, then stop polling once nothing is pending.
+  useEffect(() => {
+    if (!hasPendingTransaction) {
+      return undefined;
+    }
+
+    const intervalId = setInterval(() => {
+      void loadTransactions({ silent: true });
+    }, PENDING_POLL_INTERVAL_MS);
+
+    return () => clearInterval(intervalId);
+  }, [hasPendingTransaction]);
 
   const isLoading = viewState === "loading";
   const isEmpty = viewState === "empty";
@@ -181,6 +207,10 @@ export default function TransactionHistory({ onBack }) {
           Back
         </button>
       </div>
+
+      {hasPendingTransaction ? (
+        <p className="helperText">Auto-refreshing while a transaction is pending…</p>
+      ) : null}
 
       {isLoading ? (
         <div className="notice info">
