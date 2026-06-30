@@ -34,6 +34,10 @@ Runtime notes:
   ABI/address through `BlockchainClient`.
 - The wallet funding worker is enabled in `docker-compose.yml` for local demos,
   so wallets created live in the UI are auto-funded to the `100` TNX baseline.
+- The flow is fully self-contained. It requires **no** manual `full-deploy`,
+  **no** host-side `.demo-data` folder, **no** pre-existing Docker volumes or
+  prior chain/DB state, and **no** local `.env` — `./scripts/demo-setup.sh`
+  starts from a clean state (`docker compose down -v`).
 - Health endpoints confirm the backend and contract are ready:
   - `GET /health`
   - `GET /health/contract`
@@ -62,10 +66,15 @@ Recommended roles:
 2. Create a wallet.
 3. View blockchain-backed wallet balance.
 4. Send tokens.
-5. Observe:
-   - `txHash`
-   - `PENDING` → `CONFIRMED`
+5. Observe the returned `txHash` and the transaction recorded in history.
 6. Open transaction history.
+
+> **Out of scope — transaction status auto-refresh:** A submitted transfer is
+> recorded and shown in history as `PENDING`. The automatic in-UI
+> `PENDING → CONFIRMED` refresh is **not** part of the deterministic demo setup;
+> it is handled separately by the `feat/tx-status-autopoll` work. Until that is
+> merged, re-open/refresh the history view (or check `GET /transactions`) to see
+> the confirmed state.
 
 ### Admin Flow
 

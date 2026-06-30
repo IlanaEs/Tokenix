@@ -53,6 +53,22 @@ To re-seed without wiping volumes (keeps the persisted demo wallets stable):
 ./scripts/demo-setup.sh --keep
 ```
 
+### What the flow does not require
+
+The deterministic flow runs from a clean clone of `main` with nothing prepared
+in advance. It explicitly does **not** require:
+
+- a manual `cd blockchain && npm run full-deploy` — the Hardhat container runs
+  it automatically on every startup;
+- a host-side `.demo-data` folder — demo wallet keys live in the
+  `tokenix_demo_data` Docker volume, created automatically;
+- any pre-existing Docker volumes or prior Hardhat chain / database state —
+  `./scripts/demo-setup.sh` starts clean with `docker compose down -v`;
+- a local `.env` or any other local configuration — the demo config (faucet,
+  funding worker, demo password, wallet-file path) is committed in
+  `docker-compose.yml`, and the contract ABIs are tracked in the repo and
+  regenerated on each deploy.
+
 ## Manual Setup (equivalent steps)
 
 If you prefer to run the steps yourself:
@@ -100,6 +116,12 @@ The seed is idempotent: funding is skipped for wallets that already claimed
 from the faucet, and the demo transfers are skipped when transfer history
 already exists. Re-running the seed therefore does not move tokens again, so
 demo balances stay at the predictable `100` TNX baseline instead of drifting.
+
+> **Out of scope — transaction status auto-refresh:** Live transfers made during
+> the demo are recorded as `PENDING` and appear in history immediately. The
+> automatic in-UI `PENDING → CONFIRMED` refresh is handled separately by
+> `feat/tx-status-autopoll` and is **not** part of this deterministic
+> demo-setup change.
 
 The resulting state supports:
 
