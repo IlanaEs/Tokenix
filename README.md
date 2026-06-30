@@ -57,11 +57,23 @@ The MVP currently supports:
 
 ## Running the Full Stack
 
-From the repository root:
+For a complete, reproducible local demo (clean start → contract deploy → ABI
+sync → seeded demo users/wallets → verification) run the bootstrap script from
+the repository root:
+
+```bash
+./scripts/demo-setup.sh
+```
+
+To just start the services without seeding:
 
 ```bash
 docker compose up --build
 ```
+
+The Hardhat container auto-deploys the contracts and syncs the ABIs on startup,
+and the backend waits for it to be healthy — so the stack comes up wired
+together with no manual deploy step. See [docs/DEMO_DATA.md](docs/DEMO_DATA.md).
 
 Default local URLs:
 
@@ -78,7 +90,10 @@ The backend service depends on the Hardhat container health state. This prevents
 
 ## Blockchain Deployment and ABI Sync
 
-For a fresh local blockchain startup, deploy and sync the contract metadata:
+In the Docker flow this is **automatic**: the Hardhat container's entrypoint runs
+`npm run full-deploy` on every startup, and the backend only starts once Hardhat
+reports healthy. You only need to run it by hand for the non-Docker local
+development path:
 
 ```bash
 cd blockchain
@@ -87,16 +102,23 @@ npm run full-deploy
 
 `npm run full-deploy` performs the local contract lifecycle:
 
-1. Compile the Solidity contract.
-2. Deploy the ERC-20 contract to the local Hardhat network.
-3. Sync the ABI and deployed contract address into the application.
+1. Compile the Solidity contracts (`MyToken`, `GuardedFaucet`).
+2. Deploy them to the local Hardhat network and transfer token ownership to the faucet.
+3. Sync the ABIs and deployed addresses into the application.
 
-The synced contract metadata is written to:
+The synced contract metadata is written to (and committed as a baseline in)
+`backend/src/abi/` and `frontend/src/abi/`:
 
-- `backend/src/abi/MyToken.json`
-- `frontend/src/abi/MyToken.json`
+- `MyToken.json`
+- `GuardedFaucet.json`
+- `DeploymentEpoch.json`
 
-The backend reads the configured contract ABI/address through `BlockchainClient`. The frontend uses the synced ABI/address to construct and sign token transfer transactions locally. After a fresh Hardhat chain restart, run `full-deploy` again so the app uses the new local contract address.
+These files are tracked so a clean checkout builds without a prior deploy (the
+frontend imports `MyToken.json` at build time), and they are regenerated on each
+deploy so they stay in sync with the freshly deployed local addresses. Because a
+fresh Hardhat chain is deterministic, the redeployed addresses match the
+committed baseline. The backend reads the ABI/address through `BlockchainClient`;
+the frontend uses them to construct and sign token transfers locally.
 
 ## API Surface
 
@@ -240,8 +262,8 @@ Docker Compose orchestrates the local MVP services:
 
 Important runtime notes:
 
-- The Hardhat chain is local and ephemeral.
-- Run `npm run full-deploy` after a fresh blockchain startup or when contract metadata needs to be refreshed.
+- The Hardhat chain is local and ephemeral; the container redeploys it on every startup.
+- In the Docker flow `full-deploy` runs automatically on the Hardhat container's startup. Run it manually only for the non-Docker local-development path or when refreshing metadata outside Docker.
 - ABI/address sync keeps backend and frontend contract metadata aligned.
 - `BlockchainClient` depends on the synced ABI/address and the configured RPC URL.
 - Contract health is exposed through `/health/contract`.

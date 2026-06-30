@@ -14,25 +14,27 @@ The goal is to show a complete product flow from user wallet actions to backend 
 
 ## 2. Environment Setup
 
-Start the full local stack from the repository root:
+From the repository root, on a clean checkout of `main`, run the deterministic
+bootstrap (clean start → auto-deploy → seed → verify):
 
 ```bash
-docker compose up --build
+./scripts/demo-setup.sh
 ```
 
-For a fresh local blockchain startup, deploy the contract and sync metadata:
-
-```bash
-cd blockchain
-npm run full-deploy
-```
+This is the one-command path to the full demo state (3 demo users, funded
+wallets at the `100` TNX baseline, transaction history). See
+[`DEMO_DATA.md`](./DEMO_DATA.md) for what it does and a manual equivalent.
 
 Runtime notes:
 
-- Hardhat runs the local blockchain used for the demo.
-- `full-deploy` compiles and deploys the token contract, then syncs the ABI/address into the backend and frontend.
-- The backend uses the synced ABI/address through `BlockchainClient`.
-- Health endpoints are available to confirm the backend and contract are ready:
+- Hardhat runs the local blockchain used for the demo, and **auto-deploys the
+  contracts and syncs the ABI/address on every startup** (its entrypoint runs
+  `npm run full-deploy`). No manual deploy step is needed for the Docker flow.
+- The backend waits for Hardhat to report healthy, then uses the synced
+  ABI/address through `BlockchainClient`.
+- The wallet funding worker is enabled in `docker-compose.yml` for local demos,
+  so wallets created live in the UI are auto-funded to the `100` TNX baseline.
+- Health endpoints confirm the backend and contract are ready:
   - `GET /health`
   - `GET /health/contract`
 
@@ -103,7 +105,8 @@ Expected result:
 ## 7. Demo Tips
 
 - Keep Docker running before the presentation starts.
-- Run `npm run full-deploy` after any fresh Hardhat blockchain startup.
+- The Hardhat container redeploys and re-syncs automatically on each startup, so
+  no manual `full-deploy` is needed for the Docker flow.
 - Prepare a funded wallet before the live demo.
 - Keep an Admin account ready.
 - Keep a regular `USER` account ready for freeze/unfreeze and role-management examples.

@@ -20,78 +20,69 @@ Roles:
 - `user1@example.com` — `USER`
 - `user2@example.com` — `USER`
 
-Set the demo password at runtime:
+The seeded accounts use a **local-only** demo password, `tokenix-demo-local`,
+which is committed in `docker-compose.yml` (`DEMO_PASSWORD`) purely so the demo
+can be reproduced with a single command. It is throwaway local credential
+material for disposable local accounts — never reuse it anywhere real, and do
+not add real passwords or secrets to the compose file.
+
+## Quick Start (recommended)
+
+From the repository root, on a clean checkout of `main`:
 
 ```bash
-DEMO_PASSWORD="<choose-a-local-demo-password>"
+./scripts/demo-setup.sh
 ```
 
-Do not commit real passwords or secrets.
+This performs the entire deterministic flow with no manual steps and no local
+configuration:
 
-## Runtime Setup
+1. `docker compose down -v` then `docker compose up --build -d` (clean state).
+2. Waits for the Hardhat container to **auto-deploy the contracts and sync the
+   ABIs** (its entrypoint runs `npm run full-deploy` on every start; the backend
+   only starts once Hardhat reports healthy).
+3. Seeds demo users/wallets via `docker compose exec backend node
+   scripts/prepare-demo-data.js` (the demo password and wallet-file path come
+   from `docker-compose.yml`, so nothing is passed by hand).
+4. Verifies the end state: 3 demo users, funding-readiness rows, CONFIRMED
+   transfers, and a `100` TNX on-chain balance for each demo wallet.
 
-Start the local stack:
+To re-seed without wiping volumes (keeps the persisted demo wallets stable):
 
 ```bash
-docker compose up --build
+./scripts/demo-setup.sh --keep
 ```
 
-After a fresh Hardhat blockchain startup, deploy and sync the contract:
+## Manual Setup (equivalent steps)
+
+If you prefer to run the steps yourself:
 
 ```bash
-cd blockchain
-npm run full-deploy
+# 1. Start the stack (Hardhat auto-deploys + syncs ABIs; backend waits for it)
+docker compose up --build -d
+
+# 2. Seed (DEMO_PASSWORD / DEMO_WALLET_FILE are provided by docker-compose.yml)
+docker compose exec backend node scripts/prepare-demo-data.js
 ```
 
-## Run The Seed Script
+> The legacy `cd blockchain && npm run full-deploy` step is **no longer
+> required** for the Docker flow — the Hardhat container runs it automatically
+> on startup. Run it manually only for the non-Docker local-development path.
 
-From the backend directory:
+### Demo wallet persistence
 
-```bash
-cd backend
-DEMO_PASSWORD="<choose-a-local-demo-password>" \
-RPC_URL="http://127.0.0.1:8545" \
-node scripts/prepare-demo-data.js
-```
+Generated demo wallet private keys are written to `DEMO_WALLET_FILE`
+(`/app/.demo-data/tokenix-demo-wallets.json`), which is backed by the
+**named Docker volume** `tokenix_demo_data` declared in `docker-compose.yml`.
+This keeps demo wallet addresses/keys stable across container restarts and
+re-seeds without depending on any host-side directory. Because the keys persist
+and the faucet allows a single claim per wallet, re-running the seed is
+idempotent: already-funded wallets are skipped and only their readiness and
+transaction records are refreshed.
 
-The script stores generated demo wallet private keys in `DEMO_WALLET_FILE`,
-which defaults to a temporary path outside the repository:
-
-```text
-/tmp/tokenix-demo-wallets.json
-```
-
-This file is local runtime material only. It must not be committed.
-
-### Stable demo wallets across container restarts (recommended)
-
-The default `/tmp` location lives inside the backend container, so recreating
-that container (e.g. to change env vars) wipes the file and the next seed
-generates **new** wallet addresses and keys. To keep demo wallet addresses and
-keys stable across restarts/re-seeds, point `DEMO_WALLET_FILE` at a
-host-mounted, gitignored directory.
-
-In `docker-compose.yml`, mount a local directory into the backend service and
-set the env var (no secrets in compose — only the path):
-
-```yaml
-  backend:
-    environment:
-      DEMO_WALLET_FILE: /app/.demo-data/tokenix-demo-wallets.json
-    volumes:
-      - ./backend/.demo-data:/app/.demo-data
-```
-
-`backend/.demo-data/` is gitignored because the file holds local-chain private
-keys. Because the keys persist, re-running the seed is idempotent for funding:
-the faucet allows a single claim per wallet, so already-funded wallets are
-skipped and only their readiness/transaction records are refreshed.
-
-For a one-off non-default local path instead:
-
-```bash
-DEMO_WALLET_FILE="/tmp/tokenix-demo-wallets.json"
-```
+A clean run (`./scripts/demo-setup.sh`, or `docker compose down -v`) wipes that
+volume so wallets are regenerated from scratch and re-funded to the same `100`
+TNX baseline. The keys never touch the repository or the host filesystem.
 
 ## Prepared State
 
@@ -146,7 +137,9 @@ docker compose exec db psql -U postgres -d tokenix -c "SELECT user_id, email, ro
 ## Notes For Demo Operators
 
 - Keep Docker running before the presentation starts.
-- Run `full-deploy` after a fresh local blockchain startup.
-- Run the seed script after the backend, database, and Hardhat RPC are ready.
+- The Hardhat container runs `full-deploy` automatically on startup; you do not
+  need to run it by hand for the Docker flow.
+- Prefer `./scripts/demo-setup.sh`, which waits for the backend, database, and
+  Hardhat RPC to be ready before seeding.
 - Keep the demo password local to the presentation environment.
 - Do not commit generated wallet files, passwords, JWTs, or private keys.
