@@ -1,3 +1,18 @@
+# Local demo / development stack for Tokenix.
+#
+# IMPORTANT: This file is for the LOCAL Hardhat-only demo and development
+# environment only. Every secret below is a well-known PUBLIC test value (the
+# stock Hardhat account #0 key, a throwaway local AES key, a local demo
+# password). They are safe ONLY because the chain, database, and tokens are all
+# disposable local state. NEVER reuse any of these values, or this compose file,
+# for a shared, staging, or production deployment.
+#
+# A clean, reproducible demo state is created by the bundled bootstrap script:
+#
+#   ./scripts/demo-setup.sh
+#
+# which performs a clean `up`, lets Hardhat auto-deploy + sync the ABIs, seeds
+# the demo users/wallets, and verifies the 100 TNX baseline. See docs/DEMO_DATA.md.
 services:
   db:
     image: postgres:16
@@ -17,16 +32,47 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/tokenix
       RPC_URL: http://hardhat:8545
+      # Deterministic addresses of a FRESH Hardhat chain (account 0, nonces 0/1).
+      # The Hardhat container redeploys these on every `up`, and BlockchainClient
+      # prefers the address synced into the ABI files, so these are just defaults.
       CONTRACT_ADDRESS: 0x5FbDB2315678afecb367f032d93F642f64180aa3
-      FAUCET_CONTRACT_ADDRESS: ""
-      WALLET_FUNDING_WORKER_ENABLED: "false"
+      FAUCET_CONTRACT_ADDRESS: 0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512
       TX_CONFIRMATIONS_REQUIRED: "1"
       JWT_SECRET: super_secret_change_me
       PORT: 3000
+
+      # --- Wallet funding worker (LOCAL DEMO: enabled) ---------------------
+      # Enabled so wallets created live through the UI during the demo are
+      # auto-funded to the 100 TNX baseline. The seed funds its own demo
+      # wallets directly via the faucet, so this only affects new wallets.
+      WALLET_FUNDING_WORKER_ENABLED: "true"
+      WALLET_FUNDING_WORKER_ID: local-worker-1
+      WALLET_FUNDING_WORKER_POLL_MS: "5000"
+      WALLET_FUNDING_LEASE_SECONDS: "30"
+      WALLET_GAS_FUNDING_AMOUNT_ETH: "0.005"
+      WALLET_TOKEN_FUNDING_AMOUNT: "100"
+      # Local-only faucet signer: Hardhat account 0, which owns the GuardedFaucet
+      # (the token's owner) and is the only address allowed to call claim().
+      # Well-known PUBLIC Hardhat test key — local dev only, never real funds.
+      FAUCET_SIGNER_PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+      # AES-256-GCM keyring for the signed-transaction outbox. Local-only key.
+      TX_OUTBOX_ACTIVE_KEY_ID: "local-key-1"
+      TX_OUTBOX_ENCRYPTION_KEYS: '{"local-key-1":"BBa8zFEE9u/M+K6hitZmb7eyR3f43XTC/SLHo5GZv0M="}'
+
+      # --- Demo seed -------------------------------------------------------
+      # Local-only demo password for the seeded throwaway accounts. Lets the
+      # seed run non-interactively (`docker compose exec backend node
+      # scripts/prepare-demo-data.js`). Local demo accounts only.
+      DEMO_PASSWORD: tokenix-demo-local
+      # Persist generated demo wallet keys on a named Docker volume so demo
+      # wallet addresses/keys stay stable across container restarts/re-seeds
+      # without depending on any host-side (gitignored) directory.
+      DEMO_WALLET_FILE: /app/.demo-data/tokenix-demo-wallets.json
     ports:
       - "3000:3000"
     volumes:
       - ./backend/src/abi:/app/src/abi
+      - tokenix_demo_data:/app/.demo-data
     depends_on:
       db:
         condition: service_started
@@ -65,3 +111,4 @@ services:
 
 volumes:
   tokenix_pgdata:
+  tokenix_demo_data:
